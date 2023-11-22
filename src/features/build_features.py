@@ -7,10 +7,6 @@ import pandas as pd
 import csv
 import os
 
-DATA_NAME = 'newprices.csv'
-INPUT = '../../data/raw/'
-OUTPUT = '../../data/processed/'
-
 NAME_MAPPING = {
     'Policy_Start_Bonus_Malus_Class': 'BonusMalus',
     'Vehicle_age': 'CarAge',
@@ -27,9 +23,6 @@ NAME_MAPPING = {
 }
 
 BONUS_MALUS_CLASSES = ['B10', 'B09', 'B08', 'B07', 'B06', 'B05', 'B04', 'B03', 'B02', 'B01', 'A00', 'M01', 'M02', 'M03', 'M04']
-
-INDEX_COL = 'policyNr'
-PRICE_ANNOTATIONS = '_newprice'
 
 
 def prepareDir(dir):
@@ -57,32 +50,32 @@ def read_file(file_path):
         raise ValueError(f"Unsupported file format: {file_extension}")
 
 
-def main(input_filepath, output_filepath):
+def main(input_filepath, output_filepath, filename, index_col, price_annotation):
     logger = logging.getLogger(__name__)
     logger.info('making final data set from raw data')
     # Load the new data
     data = read_file(input_filepath)
 
     # Process the data
-    price_columns = data.filter(regex=PRICE_ANNOTATIONS, axis=1).columns.tolist()
-    price_columns_mapping = {x: x.replace(PRICE_ANNOTATIONS, '_price') for x in price_columns}
+    price_columns = data.filter(regex=price_annotation, axis=1).columns.tolist()
+    price_columns_mapping = {x: x.replace(price_annotation, '_price') for x in price_columns}
 
     NAME_MAPPING.update(price_columns_mapping)
 
     data = data.rename(NAME_MAPPING, axis=1)
-    data = data.set_index(INDEX_COL)
+    data = data.set_index(index_col)
 
     data = data[list(NAME_MAPPING.values())]
     data['BonusMalus'] = data['BonusMalus'].astype('category')
     data['CarMake'] = data['CarMake'].astype('category')
 
     # Save processed data to CSV
-    processed_data_path = f'{output_filepath}{DATA_NAME.split(".")[0]}_processed.csv'
+    processed_data_path = f'{output_filepath}{filename.split(".")[0]}_processed.csv'
     data.to_csv(processed_data_path)
     logger.info("Exported dataset to {}".format(processed_data_path))
 
     # Save features to a text file
-    features_file_path = f'{output_filepath}{DATA_NAME.split(".")[0]}_features.txt'
+    features_file_path = f'{output_filepath}{filename.split(".")[0]}_features.txt'
     with open(features_file_path, 'w') as file:
         feature_cols = [col for col in data.columns if '_price' not in col]
         for feature in feature_cols:
@@ -92,8 +85,11 @@ def main(input_filepath, output_filepath):
 @click.command()
 @click.argument('input_filepath', type=click.Path(exists=True))
 @click.argument('output_filepath', type=click.Path())
-def cli(input_filepath, output_filepath):
-    main(input_filepath, output_filepath)
+@click.argument('filename')
+@click.option('--index_col', default='id_case', help = 'annotation of index column (id_case, policyNr)')
+@click.option('--price_annotation', default = '_price', help = 'annotation of price columns (_price, _newprice)')
+def cli(input_filepath, output_filepath, filename, index_col, price_annotation):
+    main(input_filepath, output_filepath, filename, index_col, price_annotation)
 
 
 if __name__ == '__main__':
