@@ -50,6 +50,16 @@ def read_file(file_path):
         raise ValueError(f"Unsupported file format: {file_extension}")
 
 
+def add_bracket_features(data, features, brackets_path):
+    brackets = pd.read_json( brackets_path, orient='index').T
+
+    for feature in brackets.columns:
+        data[f'{feature}_cut'] = pd.cut(data[feature], brackets[feature].dropna(), labels = False).astype('category')
+        data.drop(columns=[feature])
+        features[features.index(feature)] = f'{feature}_cut'
+    return data, features
+
+
 def main(input_filepath, output_filepath, filename, index_col, price_annotation):
     logger = logging.getLogger(__name__)
     logger.info('making final data set from raw data')
@@ -79,7 +89,7 @@ def main(input_filepath, output_filepath, filename, index_col, price_annotation)
     with open(features_file_path, 'w') as file:
         feature_cols = [col for col in data.columns if '_price' not in col]
         for feature in feature_cols:
-            file.write(f"{feature}, {str(data[feature].dtype)}\n")
+            file.write(f"{feature},{str(data[feature].dtype)}\n")
     logger.info("Exported features to {}".format(features_file_path))
 
 @click.command()
