@@ -60,11 +60,29 @@ def add_bracket_features(data, features, brackets_path):
     return data, features
 
 
-def main(input_filepath, output_filepath, filename, index_col, price_annotation):
+def main(input_filepath, output_filepath, filename, only_convert_to_csv, index_col, price_annotation):
     logger = logging.getLogger(__name__)
     logger.info('making final data set from raw data')
+
     # Load the new data
     data = read_file(input_filepath)
+
+    if only_convert_to_csv:
+        data['BonusMalus'] = data['BonusMalus'].astype('category')
+        data['CarMake'] = data['CarMake'].astype('category')
+        processed_data_path = f'{output_filepath}{filename.split(".")[0]}_processed.csv'
+        data.to_csv(processed_data_path)
+        logger.info("Exported dataset to {}".format(processed_data_path))
+        features_file_path = f'{output_filepath}{filename.split(".")[0]}_features.txt'
+        with open(features_file_path, 'w') as file:
+
+            feature_cols = [col for col in data.columns if '_price' not in col and col not in ['id_case', 'DateCrawled']]
+
+            for feature in feature_cols:
+                file.write(f"{feature},{str(data[feature].dtype)}\n")
+        logger.info("Exported features to {}".format(features_file_path))
+
+        return
 
     # Process the data
     price_columns = data.filter(regex=price_annotation, axis=1).columns.tolist()
@@ -75,7 +93,11 @@ def main(input_filepath, output_filepath, filename, index_col, price_annotation)
     data = data.rename(NAME_MAPPING, axis=1)
     data = data.set_index(index_col)
 
-    data = data[list(NAME_MAPPING.values())]
+    cols_to_use = []
+    for value in NAME_MAPPING.values():
+        if value in data.columns:
+            cols_to_use.append(value)
+    data = data[cols_to_use]
     data['BonusMalus'] = data['BonusMalus'].astype('category')
     data['CarMake'] = data['CarMake'].astype('category')
 
@@ -90,16 +112,18 @@ def main(input_filepath, output_filepath, filename, index_col, price_annotation)
         feature_cols = [col for col in data.columns if '_price' not in col]
         for feature in feature_cols:
             file.write(f"{feature},{str(data[feature].dtype)}\n")
+
     logger.info("Exported features to {}".format(features_file_path))
 
 @click.command()
 @click.argument('input_filepath', type=click.Path(exists=True))
 @click.argument('output_filepath', type=click.Path())
 @click.argument('filename')
+@click.option('--only_convert_to_csv', is_flag=True, default=False)
 @click.option('--index_col', default='id_case', help = 'annotation of index column (id_case, policyNr)')
 @click.option('--price_annotation', default = '_price', help = 'annotation of price columns (_price, _newprice)')
-def cli(input_filepath, output_filepath, filename, index_col, price_annotation):
-    main(input_filepath, output_filepath, filename, index_col, price_annotation)
+def cli(input_filepath, output_filepath, filename, only_convert_to_csv, index_col, price_annotation):
+    main(input_filepath, output_filepath, filename, only_convert_to_csv, index_col, price_annotation)
 
 
 if __name__ == '__main__':
