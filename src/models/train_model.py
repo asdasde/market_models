@@ -1,0 +1,245 @@
+import dataframe_image as dfi
+import xgboost
+import os
+import shap
+from typing import Optional
+
+
+from sklearn.metrics import mean_absolute_error
+from sklearn.metrics import mean_absolute_percentage_error
+from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import KFold
+from sklearn.preprocessing import OrdinalEncoder
+from sklearn.preprocessing import LabelEncoder
+from hyperopt import STATUS_OK, Trials, fmin, hp, tpe
+
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+
+xgboost.set_config(verbosity=0)
+import click
+import logging
+from pathlib import Path
+from dotenv import find_dotenv, load_dotenv
+
+
+def prepareDir(dir):
+    if not os.path.isdir(dir):
+        os.mkdir(dir)
+    for file in os.listdir(dir):
+        os.remove(dir + file)
+
+INPUT = '../data/processed/'
+OUTPUT = '../models/'
+
+TEST_SIZE = 0.1
+RANDOM_STATE = 42
+
+DEFAULT_PARAMS = {
+    'objective': 'reg:squarederror',
+    'booster': 'gbtree',
+    'eval_metric': 'mae',
+    'n_estimators': 100,
+    'eta': 0.3,
+    'max_depth': 6,
+    'subsample': 1.0,
+    'colsample_bytree': 1.0,
+    'num_boost_round': 100,
+    'early_stopping_rounds': None,
+    'seed': 42
+}
+
+SPACE = {
+    'learning_rate': hp.uniform('learning_rate', 0.01, 0.3),
+    'n_estimators': hp.choice('n_estimators', np.arange(100, 1300, 100, dtype=int)),
+    'max_depth': hp.choice('max_depth', np.arange(2, 11, dtype=int)),
+    'min_child_weight': hp.choice('min_child_weight', np.arange(1, 11, dtype=int)),
+    'subsample': hp.uniform('subsample', 0.5, 1),
+    'colsample_bytree': hp.uniform('colsample_bytree', 0.5, 1),
+    'gamma': hp.uniform('gamma', 0, 0.2),
+    'lambda': hp.uniform('lambda', 0, 1),
+    'reg_alpha': hp.uniform('reg_alpha', 40, 180),
+    'reg_lambda': hp.uniform('reg_lambda', 0, 1),
+    'seed': 0,
+}
+
+
+
+BONUS_MALUS_CLASSES = ['B10', 'B9', 'B8', 'B7', 'B6', 'B5', 'B4', 'B3', 'B2', 'B1', 'A0', 'M1', 'M2', 'M3', 'M4']
+
+
+def makeDMatrix(data_features: pd.DataFrame,
+                data_target: pd.DataFrame) -> xgboost.DMatrix:
+    return xgboost.DMatrix(data_features, data_target, enable_categorical=True)
+
+
+def model_train(train_data: pd.DataFrame,
+                test_data: pd.DataFrame,
+                features: list,
+                target_variable: str,
+                param: dict = None) -> xgboost.Booster:
+
+    if param is None:
+        param = DEFAULT_PARAMS.copy()
+
+    dtrain = xgboost.DMatrix(train_data[features], train_data[target_variable], enable_categorical=True)
+    dtest = xgboost.DMatrix(test_data[features], test_data[target_variable], enable_categorical=True)
+
+    param['max_depth'] = int(param['max_depth'])
+    param['eval_metric'] = 'mae'
+
+    eval_list = [(dtrain, 'train'), (dtest, 'eval')]
+
+    return xgboost.train(param, dtrain, num_boost_round=param['n_estimators'], evals=eval_list, verbose_eval=False)
+
+
+def merge_predictions(model: xgboost.Booster,
+                      test_data: pd.DataFrame,
+                      features: list,
+                      target_variable: str) -> pd.DataFrame:
+
+    pred_target_variable = f'predicted_{target_variable}'
+    output = test_data.copy()
+
+    dtest = makeDMatrix(test_data[features], test_data[target_variable])
+    output[pred_target_variable] = model.predict(dtest)
+
+    output['error'] = output[target_variable] - output[pred_target_variable]
+    output['percentageError'] = output['error'] / output[target_variable] * 100
+    return output
+
+
+
+def kFoldCrossValidation(k: int,
+                         data: pd.DataFrame,
+                         features: list,
+                         target_variable: str,
+                         param: Optional[dict],
+                         debug: bool) -> tuple:
+
+    maes = []
+    mses = []
+    mapes = []
+
+    kf = KFold(n_splits=k)
+    fold_num = 0
+    for train_ix, test_ix in kf.split(data):
+
+        fold_num += 1
+
+        train_data, test_data = data.iloc[train_ix], data.iloc[test_ix]
+        model = model_train(train_data, test_data, features, target_variable, param)
+
+        dtest = makeDMatrix(test_data[features], test_data[target_variable])
+        test_preds = model.predict(dtest)
+
+        mae = mean_absolute_error(test_data[target_variable].values, test_preds)
+        mse = mean_squared_error(test_data[target_variable].values, test_preds)
+        mape = mean_absolute_percentage_error(test_data[target_variable].values, test_preds)
+
+        if debug:
+            print(f"Summary for fold {fold_num}")
+            print("Mean absolute error is {}, which is {}% of mean {}.".format(round(mae, 3), round(
+                mae / data[target_variable].mean() * 100, 3), target_variable))
+            print("Mean square error is {}.".format(round(mse, 3)))
+            print("Mean absolute percentage error is {}%.".format(round(mape * 100, 3)))
+            print("-------------------------------------------------------------")
+
+        maes.append(mae)
+        mses.append(mse)
+        mapes.append(mape)
+
+    mMae, sMae = np.mean(maes), np.std(maes)
+    mRMse, sRMse = np.mean(np.sqrt(mses)), np.std(np.sqrt(mses))
+    mMape, sMape = np.mean(mapes), np.std(mapes)
+    meanPrice = data[target_variable].mean()
+
+    rmMae, rsMae = round(mMae, 2), round(sMae / mMae * 100, 3)
+    rmRMse, rsRMse = round(mRMse, 2), round(sRMse / mRMse * 100, 2)
+    rmMape, rsMape = round(mMape * 100, 2), round(sMape / mMape, 3)
+
+    if debug:
+        print(
+            f"Mean MAE over {k} fold Cross-validation is {rmMae} ± {rsMae}%, which is {round(mMae / meanPrice * 100, 3)} ± {round(sMae / meanPrice * 100, 3)}% percent of mean {target_variable}.")
+        print(f"Mean RMSE over {k} fold Cross-validation is {rmRMse} ± {rsRMse}%.")
+        print(f"Mean MAPE over {k} fold Cross-validation is {rmMape} ± {rsMape}%.")
+
+    return rmMae, rmRMse, rmMape
+
+
+
+
+@click.command()
+@click.argument('data_name', type = click.STRING)
+@click.argument('target_variable', type=click.STRING)
+def train_model(data_name, target_variable):
+
+    DATA_PATH = f'{INPUT}{data_name}_processed.csv'
+    FEATURES_PATH = f'{INPUT}{data_name}_features.txt'
+
+    ####### CONSTANTS
+
+
+    TARGET_VARIABLE = target_variable
+    PRED_TARGET_VARIABLE = f'predicted_{TARGET_VARIABLE}'
+    MODEL_OUTPUT_PATH = f'{OUTPUT}{data_name}_{target_variable}_model.json'
+
+    DATA = pd.read_csv(DATA_PATH)
+    logging.info("Imported data...")
+    with open(FEATURES_PATH) as file:
+        FEATURES = file.readlines()
+        FEATURES = [feature.replace('\n', '') for feature in FEATURES]
+        feature_dtypes = {feature.split(',')[0]: feature.split(',')[1] for feature in FEATURES}
+        FEATURES = [feature.split(',')[0] for feature in FEATURES]
+
+    for feature in FEATURES:
+        DATA[feature] = DATA[feature].astype(feature_dtypes[feature])
+        if DATA[feature].dtype == 'category' and feature == 'BonusMalus':
+            ordinal_encoder = OrdinalEncoder(categories=[BONUS_MALUS_CLASSES])
+            DATA[feature] = ordinal_encoder.fit_transform(DATA[[feature]])
+        elif DATA[feature].dtype == 'category':
+            label_encoder = LabelEncoder()
+            DATA[feature] = label_encoder.fit_transform(DATA[feature])
+    logging.info("Imported feature data...")
+
+    DATA = DATA[FEATURES + [TARGET_VARIABLE]]
+    DATA = DATA.dropna()
+    TRAIN_DATA, TEST_DATA = train_test_split(DATA, test_size=0.2, random_state=42)
+    logging.info("Removed columns that are not used and nan values on target variable...")
+
+    trials = Trials()
+
+    def objective(space):
+        params = space.copy()
+        mae, rmse, mape = kFoldCrossValidation(k=3, data = DATA, features = FEATURES, target_variable = TARGET_VARIABLE, param=params, debug=False)
+        return {"loss": mae, 'status': STATUS_OK}
+
+    logging.info("Starting hyper-parameter tuning...")
+    best_hyperparams = fmin(fn=objective,
+                            space=SPACE,
+                            algo=tpe.suggest,
+                            max_evals=100,
+                            trials=trials,
+                            return_argmin=False)
+
+    model = model_train(DATA, DATA, FEATURES, TARGET_VARIABLE, best_hyperparams)
+    logging.info("Finished hyper-parameter tuning...")
+
+    model.save_model(MODEL_OUTPUT_PATH)
+    logging.info(f"Saved model to {MODEL_OUTPUT_PATH}...")
+
+
+if __name__ == '__main__':
+    log_fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    logging.basicConfig(level=logging.INFO, format=log_fmt)
+
+    # not used in this stub but often useful for finding various files
+    project_dir = Path(__file__).resolve().parents[2]
+
+    # find .env automagically by walking up directories until it's found, then
+    # load up the .env entries as environment variables
+    load_dotenv(find_dotenv())
+
+    train_model()
+
