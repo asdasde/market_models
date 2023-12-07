@@ -1,7 +1,7 @@
-import dataframe_image as dfi
-import xgboost
+import sys
 import os
-import shap
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import xgboost
 from typing import Optional
 
 
@@ -9,8 +9,6 @@ from sklearn.metrics import mean_absolute_error
 from sklearn.metrics import mean_absolute_percentage_error
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import KFold
-from sklearn.preprocessing import OrdinalEncoder
-from sklearn.preprocessing import LabelEncoder
 from hyperopt import STATUS_OK, Trials, fmin, hp, tpe
 
 import pandas as pd
@@ -22,6 +20,7 @@ import click
 import logging
 from pathlib import Path
 from dotenv import find_dotenv, load_dotenv
+import utils
 
 
 def prepareDir(dir):
@@ -63,11 +62,6 @@ SPACE = {
     'reg_lambda': hp.uniform('reg_lambda', 0, 1),
     'seed': 0,
 }
-
-
-
-BONUS_MALUS_CLASSES = ['B10', 'B9', 'B8', 'B7', 'B6', 'B5', 'B4', 'B3', 'B2', 'B1', 'A0', 'M1', 'M2', 'M3', 'M4']
-
 
 def makeDMatrix(data_features: pd.DataFrame,
                 data_target: pd.DataFrame) -> xgboost.DMatrix:
@@ -171,8 +165,8 @@ def kFoldCrossValidation(k: int,
 
 
 @click.command()
-@click.argument('data_name', type = click.STRING)
-@click.argument('target_variable', type=click.STRING)
+@click.option('--data_name', required=True, type = click.STRING)
+@click.option('--target_variable', required=True, type=click.STRING)
 def train_model(data_name, target_variable):
 
     DATA_PATH = f'{INPUT}{data_name}_processed.csv'
@@ -180,28 +174,11 @@ def train_model(data_name, target_variable):
 
     ####### CONSTANTS
 
-
     TARGET_VARIABLE = target_variable
     PRED_TARGET_VARIABLE = f'predicted_{TARGET_VARIABLE}'
     MODEL_OUTPUT_PATH = f'{OUTPUT}{data_name}_{target_variable}_model.json'
 
-    DATA = pd.read_csv(DATA_PATH)
-    logging.info("Imported data...")
-    with open(FEATURES_PATH) as file:
-        FEATURES = file.readlines()
-        FEATURES = [feature.replace('\n', '') for feature in FEATURES]
-        feature_dtypes = {feature.split(',')[0]: feature.split(',')[1] for feature in FEATURES}
-        FEATURES = [feature.split(',')[0] for feature in FEATURES]
-
-    for feature in FEATURES:
-        DATA[feature] = DATA[feature].astype(feature_dtypes[feature])
-        if DATA[feature].dtype == 'category' and feature == 'BonusMalus':
-            ordinal_encoder = OrdinalEncoder(categories=[BONUS_MALUS_CLASSES])
-            DATA[feature] = ordinal_encoder.fit_transform(DATA[[feature]])
-        elif DATA[feature].dtype == 'category':
-            label_encoder = LabelEncoder()
-            DATA[feature] = label_encoder.fit_transform(DATA[feature])
-    logging.info("Imported feature data...")
+    DATA, FEATURES = utils.load_data(DATA_PATH, FEATURES_PATH, TARGET_VARIABLE)
 
     DATA = DATA[FEATURES + [TARGET_VARIABLE]]
     DATA = DATA.dropna()
