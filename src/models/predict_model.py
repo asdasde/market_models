@@ -8,8 +8,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import click
 import glob
-from joblib import load
 import utils
+import logging
+from pathlib import Path
+
 
 INPUT_DATA = '../data/processed/'
 INPUT_MODEL = '../models/'
@@ -91,4 +93,10 @@ def main(data_name, all, model_name):
 
 
 if __name__ == "__main__":
+    log_fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    logging.basicConfig(level=logging.INFO, format=log_fmt)
+
+    # not used in this stub but often useful for finding various files
+    project_dir = Path(__file__).resolve().parents[2]
+
     main()

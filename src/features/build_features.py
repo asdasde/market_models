@@ -68,7 +68,6 @@ def main(input_filepath, output_filepath, filename, only_convert_to_csv, index_c
     data['BonusMalus'] = data['BonusMalus'].astype('category')
     data['CarMake'] = data['CarMake'].astype('category')
 
-    # Save processed data to CSV
     processed_data_path = f'{output_filepath}{filename.split(".")[0]}_processed.csv'
     data.to_csv(processed_data_path)
     logger.info("Exported dataset to {}".format(processed_data_path))
