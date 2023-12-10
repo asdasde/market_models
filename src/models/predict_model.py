@@ -15,6 +15,7 @@ from pathlib import Path
 
 INPUT_DATA = '../data/processed/'
 INPUT_MODEL = '../models/'
+OUTPUT_DATA = '../data/predictions/'
 
 
 def load_model(model_path):
@@ -79,7 +80,9 @@ def main(data_name, all, model_name):
     if all:
         predictions_all_models = predict_all_models(data)
         for model_name, predictions in predictions_all_models.items():
-            print(f"Predictions for {model_name}: {predictions}")
+            data[model_name] = predictions
+            logging.info(f"Predictions for {model_name}: {predictions}")
+        data.to_csv(f'{OUTPUT_DATA}{data_name}_all_predictions.csv')
     else:
         if not model_path:
             click.echo("Error: Please specify a model path.")

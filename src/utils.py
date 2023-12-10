@@ -61,6 +61,11 @@ def load_data(data_path, features_path, target_variable = None):
 
 
     for feature in features:
+        if feature_dtypes[feature] == 'index':
+            data = data.set_index(feature)
+            features.remove(feature)
+            continue
+
         data[feature] = data[feature].astype(feature_dtypes[feature])
         if data[feature].dtype == 'category' and feature == 'BonusMalus':
 
