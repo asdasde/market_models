@@ -161,35 +161,16 @@ def kFoldCrossValidation(k: int,
 
     return rmMae, rmRMse, rmMape
 
-
-
-
-@click.command()
-@click.option('--data_name', required=True, type = click.STRING)
-@click.option('--target_variable', required=True, type=click.STRING)
-def train_model(data_name, target_variable):
-
-    DATA_PATH = f'{INPUT}{data_name}_processed.csv'
-    FEATURES_PATH = f'{INPUT}{data_name}_features.txt'
-
-    ####### CONSTANTS
-
-    TARGET_VARIABLE = target_variable
-    PRED_TARGET_VARIABLE = f'predicted_{TARGET_VARIABLE}'
-    MODEL_OUTPUT_PATH = f'{OUTPUT}{data_name}_{target_variable}_model.json'
-
-    DATA, FEATURES = utils.load_data(DATA_PATH, FEATURES_PATH, TARGET_VARIABLE)
-
-    DATA = DATA[FEATURES + [TARGET_VARIABLE]]
-    DATA = DATA.dropna()
-    TRAIN_DATA, TEST_DATA = train_test_split(DATA, test_size=0.2, random_state=42)
+def train_model_util(data : pd.DataFrame, features : list, target_variable : str, model_output_path : str):
+    train_data, test_data = train_test_split(data, test_size=0.2, random_state=42)
     logging.info("Removed columns that are not used and nan values on target variable...")
 
     trials = Trials()
 
     def objective(space):
         params = space.copy()
-        mae, rmse, mape = kFoldCrossValidation(k=3, data = DATA, features = FEATURES, target_variable = TARGET_VARIABLE, param=params, debug=False)
+        mae, rmse, mape = kFoldCrossValidation(k=3, data = data, features = features, target_variable = target_variable,
+                                               param=params, debug=False)
         return {"loss": mae, 'status': STATUS_OK}
 
     logging.info("Starting hyper-parameter tuning...")
@@ -200,11 +181,69 @@ def train_model(data_name, target_variable):
                             trials=trials,
                             return_argmin=False)
 
-    model = model_train(DATA, DATA, FEATURES, TARGET_VARIABLE, best_hyperparams)
+    model = model_train(data, data, features, target_variable, best_hyperparams)
     logging.info("Finished hyper-parameter tuning...")
 
-    model.save_model(MODEL_OUTPUT_PATH)
-    logging.info(f"Saved model to {MODEL_OUTPUT_PATH}...")
+    model.save_model(model_output_path)
+    logging.info(f"Saved model to {model_output_path}...")
+
+
+@click.command()
+@click.option('--data_name', required=True, type = click.STRING)
+@click.option('--target_variable', required=True, type=click.STRING)
+def train_model(data_name, target_variable):
+
+    data_path = f'{INPUT}{data_name}_processed.csv'
+    features_path = f'{INPUT}{data_name}_features.txt'
+
+    pred_target_variable = f'predicted_{target_variable}'
+    model_output_path = f'{OUTPUT}{data_name}_{target_variable}_model.json'
+
+    data, features = utils.load_data(data_path, features_path, target_variable)
+    train_model_util(data, features, target_variable, model_output_path)
+
+@click.command(name='train_error_model')
+@click.option('--data_name', required=True, type=click.STRING)
+@click.option('--target_variable', required=True, type=click.STRING)
+@click.option('--use_pretrained_model', required=False, type=click.BOOL, default=True, show_default=True)
+def train_error_model(data_name, target_variable, use_pretrained_model):
+
+    data_path = f'{INPUT}{data_name}_processed.csv'
+    features_path = f'{INPUT}{data_name}_features.txt'
+
+    model_name = f'{data_name}_{target_variable}_model'
+    error_model_name = f'{data_name}_{target_variable}_error_model'
+
+    model_path = f'{OUTPUT}{model_name}.json'
+    error_model_path = f'{OUTPUT}{error_model_name}.json'
+
+    data, features = utils.load_data(data_path, features_path, target_variable)
+
+    if (use_pretrained_model and not os.path.exists(model_path)) or not use_pretrained_model:
+        train_model_util(data, features, target_variable, model_path)
+
+    model = utils.load_model(model_path)
+
+    predictions = utils.predict(model, data[features])
+    errors = data[target_variable] - predictions
+    errors[np.abs(errors) < 5000] = 0
+    errors[np.abs(errors) > 0] = 1
+
+    print(errors)
+
+    errors_feature = f'{model_name}_errors'
+    data[errors_feature] = errors
+
+    data = data[features + [errors_feature]]
+
+    train_model_util(data, features, errors_feature, error_model_path)
+
+@click.group()
+def cli():
+    pass
+
+cli.add_command(train_error_model)
+cli.add_command(train_model)
 
 
 if __name__ == '__main__':
@@ -218,5 +257,5 @@ if __name__ == '__main__':
     # load up the .env entries as environment variables
     load_dotenv(find_dotenv())
 
-    train_model()
+    cli()
 

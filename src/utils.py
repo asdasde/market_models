@@ -1,6 +1,7 @@
 import os
 import csv
 import pandas as pd
+import numpy as np
 import logging
 
 from sklearn.preprocessing import LabelEncoder, OrdinalEncoder
@@ -80,11 +81,20 @@ def load_data(data_path, features_path, target_variable = None):
         data = data[features]
     else:
         data = data[features + [target_variable]]
+        data = data.dropna(subset=[target_variable])
+
     return data, features
 
 def makeDMatrix(data_features: pd.DataFrame,
                 data_target: pd.DataFrame) -> xgboost.DMatrix:
     return xgboost.DMatrix(data_features, data_target, enable_categorical=True)
 
+def load_model(model_path):
+    # Load the XGBoost model
+    return xgboost.Booster(model_file=model_path)
 
+def predict(model, data):
+    dmatrix = xgboost.DMatrix(data=data, enable_categorical=True)
+    predictions = np.abs(model.predict(dmatrix))
+    return predictions
 

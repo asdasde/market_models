@@ -2,6 +2,7 @@
 import sys
 import os
 
+import numpy as np
 import xgboost
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,17 +19,6 @@ INPUT_MODEL = '../models/'
 OUTPUT_DATA = '../data/predictions/'
 
 
-def load_model(model_path):
-    # Load the XGBoost model
-    return xgboost.Booster(model_file=model_path)
-
-
-def predict(model, data):
-    dmatrix = xgboost.DMatrix(data=data, enable_categorical=True)
-    predictions = model.predict(dmatrix)
-    return predictions
-
-
 def is_compatible(model, data):
     expected_features = get_expected_features(model)
     return set(expected_features).issubset(data.columns)
@@ -43,14 +33,14 @@ def predict_all_models(data):
     compatible_models = {}
 
     for model_path in glob.glob(os.path.join(INPUT_MODEL, "*.json")):
-        model = load_model(model_path)
+        model = utils.load_model(model_path)
         model_name = os.path.basename(model_path).replace(".json", "")
         if is_compatible(model, data):
             compatible_models[model_name] = model
 
     predictions_all_models = {}
     for model_name, model in compatible_models.items():
-        predictions = predict(model, data)
+        predictions = utils.predict(model, data)
         predictions_all_models[model_name] = predictions
 
     return predictions_all_models
@@ -87,12 +77,12 @@ def main(data_name, all, model_name):
         if not model_path:
             click.echo("Error: Please specify a model path.")
             return
-        model = load_model(model_path)
+        model = utils.load_model(model_path)
         if not is_compatible(model, data):
             click.echo("Error: Model and data are not compatible.")
             return
 
-        predictions = predict(model, data)
+        predictions = utils.predict(model, data)
 
 
 if __name__ == "__main__":
