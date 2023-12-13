@@ -1,13 +1,12 @@
 import sys
 import os
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import xgboost
 from typing import Optional
 
-
-from sklearn.metrics import mean_absolute_error
-from sklearn.metrics import mean_absolute_percentage_error
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error, mean_squared_error, accuracy_score, \
+    log_loss
 from sklearn.model_selection import KFold
 from hyperopt import STATUS_OK, Trials, fmin, hp, tpe
 
@@ -29,13 +28,14 @@ def prepareDir(dir):
     for file in os.listdir(dir):
         os.remove(dir + file)
 
+
 INPUT = '../data/processed/'
 OUTPUT = '../models/'
 
 TEST_SIZE = 0.1
 RANDOM_STATE = 42
 
-DEFAULT_PARAMS = {
+DEFAULT_PARAMS_REGRESSION = {
     'objective': 'reg:squarederror',
     'booster': 'gbtree',
     'eval_metric': 'mae',
@@ -49,7 +49,21 @@ DEFAULT_PARAMS = {
     'seed': 42
 }
 
-SPACE = {
+DEFAULT_PARAMS_CLASSIFICATION = {
+    'objective': 'binary:logistic',  # for binary classification
+    'booster': 'gbtree',
+    'eval_metric': 'logloss',  # use log loss for classification
+    'n_estimators': 100,
+    'eta': 0.3,
+    'max_depth': 6,
+    'subsample': 1.0,
+    'colsample_bytree': 1.0,
+    'num_boost_round': 100,
+    'early_stopping_rounds': None,
+    'seed': 42
+}
+
+SPACE_REGRESSION = {
     'learning_rate': hp.uniform('learning_rate', 0.01, 0.3),
     'n_estimators': hp.choice('n_estimators', np.arange(100, 1300, 100, dtype=int)),
     'max_depth': hp.choice('max_depth', np.arange(2, 11, dtype=int)),
@@ -63,25 +77,47 @@ SPACE = {
     'seed': 0,
 }
 
+SPACE_CLASSIFICATION = {
+    'learning_rate': hp.uniform('learning_rate', 0.01, 0.3),
+    'n_estimators': hp.choice('n_estimators', np.arange(100, 1300, 100, dtype=int)),
+    'max_depth': hp.choice('max_depth', np.arange(2, 11, dtype=int)),
+    'min_child_weight': hp.choice('min_child_weight', np.arange(1, 11, dtype=int)),
+    'subsample': hp.uniform('subsample', 0.5, 1),
+    'colsample_bytree': hp.uniform('colsample_bytree', 0.5, 1),
+    'gamma': hp.uniform('gamma', 0, 0.2),
+    'lambda': hp.uniform('lambda', 0, 1),
+    'reg_alpha': hp.uniform('reg_alpha', 40, 180),
+    'reg_lambda': hp.uniform('reg_lambda', 0, 1),
+    'seed': 0,
+}
+
+
 def makeDMatrix(data_features: pd.DataFrame,
-                data_target: pd.DataFrame) -> xgboost.DMatrix:
-    return xgboost.DMatrix(data_features, data_target, enable_categorical=True)
+                data_target: pd.DataFrame,
+                is_classification: bool) -> xgboost.DMatrix:
+    if is_classification:
+        return xgboost.DMatrix(data_features, label=data_target, enable_categorical=True)
+    else:
+        return xgboost.DMatrix(data_features, data_target, enable_categorical=True)
 
 
 def model_train(train_data: pd.DataFrame,
                 test_data: pd.DataFrame,
                 features: list,
                 target_variable: str,
+                is_classification: bool,
                 param: dict = None) -> xgboost.Booster:
-
     if param is None:
-        param = DEFAULT_PARAMS.copy()
+        if is_classification:
+            param = DEFAULT_PARAMS_CLASSIFICATION.copy()
+        else:
+            param = DEFAULT_PARAMS_REGRESSION.copy()
 
-    dtrain = xgboost.DMatrix(train_data[features], train_data[target_variable], enable_categorical=True)
-    dtest = xgboost.DMatrix(test_data[features], test_data[target_variable], enable_categorical=True)
+    dtrain = makeDMatrix(train_data[features], train_data[target_variable], is_classification=is_classification)
+    dtest = makeDMatrix(test_data[features], test_data[target_variable], is_classification=is_classification)
 
     param['max_depth'] = int(param['max_depth'])
-    param['eval_metric'] = 'mae'
+    param['eval_metric'] = 'logloss' if is_classification else 'mae'
 
     eval_list = [(dtrain, 'train'), (dtest, 'eval')]
 
@@ -91,12 +127,12 @@ def model_train(train_data: pd.DataFrame,
 def merge_predictions(model: xgboost.Booster,
                       test_data: pd.DataFrame,
                       features: list,
-                      target_variable: str) -> pd.DataFrame:
-
+                      target_variable: str,
+                      is_classification: bool) -> pd.DataFrame:
     pred_target_variable = f'predicted_{target_variable}'
     output = test_data.copy()
 
-    dtest = makeDMatrix(test_data[features], test_data[target_variable])
+    dtest = makeDMatrix(test_data[features], test_data[target_variable], is_classification=is_classification)
     output[pred_target_variable] = model.predict(dtest)
 
     output['error'] = output[target_variable] - output[pred_target_variable]
@@ -104,95 +140,122 @@ def merge_predictions(model: xgboost.Booster,
     return output
 
 
-
 def kFoldCrossValidation(k: int,
                          data: pd.DataFrame,
                          features: list,
                          target_variable: str,
+                         is_classification: bool,
                          param: Optional[dict],
                          debug: bool) -> tuple:
-
     maes = []
     mses = []
     mapes = []
+    log_losses = []
 
     kf = KFold(n_splits=k)
     fold_num = 0
     for train_ix, test_ix in kf.split(data):
-
         fold_num += 1
 
         train_data, test_data = data.iloc[train_ix], data.iloc[test_ix]
-        model = model_train(train_data, test_data, features, target_variable, param)
+        model = model_train(train_data, test_data, features, target_variable, is_classification, param)
 
-        dtest = makeDMatrix(test_data[features], test_data[target_variable])
+        dtest = makeDMatrix(test_data[features], test_data[target_variable], is_classification=is_classification)
         test_preds = model.predict(dtest)
 
-        mae = mean_absolute_error(test_data[target_variable].values, test_preds)
-        mse = mean_squared_error(test_data[target_variable].values, test_preds)
-        mape = mean_absolute_percentage_error(test_data[target_variable].values, test_preds)
+        if is_classification:
+            log_loss_value = log_loss(test_data[target_variable].values, test_preds)
+            log_losses.append(log_loss_value)
+        else:
+            mae = mean_absolute_error(test_data[target_variable].values, test_preds)
+            mse = mean_squared_error(test_data[target_variable].values, test_preds)
+            mape = mean_absolute_percentage_error(test_data[target_variable].values, test_preds)
+            maes.append(mae)
+            mses.append(mse)
+            mapes.append(mape)
 
         if debug:
-            print(f"Summary for fold {fold_num}")
-            print("Mean absolute error is {}, which is {}% of mean {}.".format(round(mae, 3), round(
-                mae / data[target_variable].mean() * 100, 3), target_variable))
-            print("Mean square error is {}.".format(round(mse, 3)))
-            print("Mean absolute percentage error is {}%.".format(round(mape * 100, 3)))
-            print("-------------------------------------------------------------")
+            if is_classification:
+                print(f"Summary for fold {fold_num}")
+                print("Log Loss is {}.".format(round(log_loss_value, 3)))
+                print("-------------------------------------------------------------")
 
-        maes.append(mae)
-        mses.append(mse)
-        mapes.append(mape)
+            else:
+                print(f"Summary for fold {fold_num}")
+                print("Mean absolute error is {}, which is {}% of mean {}.".format(round(mae, 3), round(
+                    mae / data[target_variable].mean() * 100, 3), target_variable))
+                print("Mean square error is {}.".format(round(mse, 3)))
+                print("Mean absolute percentage error is {}%.".format(round(mape * 100, 3)))
+                print("-------------------------------------------------------------")
+    if is_classification:
+        mean_log_loss = np.mean(log_losses)
+        std_log_loss = np.std(log_losses)
 
-    mMae, sMae = np.mean(maes), np.std(maes)
-    mRMse, sRMse = np.mean(np.sqrt(mses)), np.std(np.sqrt(mses))
-    mMape, sMape = np.mean(mapes), np.std(mapes)
-    meanPrice = data[target_variable].mean()
+        if debug:
+            print(
+                f"Mean Log Loss over {k} fold Cross-validation is {round(mean_log_loss, 3)} ± {round(std_log_loss, 3)}.")
 
-    rmMae, rsMae = round(mMae, 2), round(sMae / mMae * 100, 3)
-    rmRMse, rsRMse = round(mRMse, 2), round(sRMse / mRMse * 100, 2)
-    rmMape, rsMape = round(mMape * 100, 2), round(sMape / mMape, 3)
+        return mean_log_loss, std_log_loss
 
-    if debug:
-        print(
-            f"Mean MAE over {k} fold Cross-validation is {rmMae} ± {rsMae}%, which is {round(mMae / meanPrice * 100, 3)} ± {round(sMae / meanPrice * 100, 3)}% percent of mean {target_variable}.")
-        print(f"Mean RMSE over {k} fold Cross-validation is {rmRMse} ± {rsRMse}%.")
-        print(f"Mean MAPE over {k} fold Cross-validation is {rmMape} ± {rsMape}%.")
+    else:
+        mMae, sMae = np.mean(maes), np.std(maes)
+        mRMse, sRMse = np.mean(np.sqrt(mses)), np.std(np.sqrt(mses))
+        mMape, sMape = np.mean(mapes), np.std(mapes)
+        meanPrice = data[target_variable].mean()
 
-    return rmMae, rmRMse, rmMape
+        rmMae, rsMae = round(mMae, 2), round(sMae / mMae * 100, 3)
+        rmRMse, rsRMse = round(mRMse, 2), round(sRMse / mRMse * 100, 2)
+        rmMape, rsMape = round(mMape * 100, 2), round(sMape / mMape, 3)
 
-def train_model_util(data : pd.DataFrame, features : list, target_variable : str, model_output_path : str):
+        if debug:
+            print(
+                f"Mean MAE over {k} fold Cross-validation is {rmMae} ± {rsMae}%, which is {round(mMae / meanPrice * 100, 3)} ± {round(sMae / meanPrice * 100, 3)}% percent of mean {target_variable}.")
+            print(f"Mean RMSE over {k} fold Cross-validation is {rmRMse} ± {rsRMse}%.")
+            print(f"Mean MAPE over {k} fold Cross-validation is {rmMape} ± {rsMape}%.")
+
+        return mae, mse, mape
+
+
+def train_model_util(data: pd.DataFrame, features: list, target_variable: str, is_classification: bool, params: dict,
+                     model_output_path: str):
     train_data, test_data = train_test_split(data, test_size=0.2, random_state=42)
     logging.info("Removed columns that are not used and nan values on target variable...")
-
     trials = Trials()
 
     def objective(space):
         params = space.copy()
-        mae, rmse, mape = kFoldCrossValidation(k=3, data = data, features = features, target_variable = target_variable,
-                                               param=params, debug=False)
-        return {"loss": mae, 'status': STATUS_OK}
+        loss = kFoldCrossValidation(k=3, data=data, features=features, target_variable=target_variable,
+                                    is_classification=is_classification, param=params, debug=False)
+        return {"loss": loss[0], 'status': STATUS_OK}
 
     logging.info("Starting hyper-parameter tuning...")
+
+    if is_classification:
+        space = SPACE_CLASSIFICATION
+    else:
+        space = SPACE_REGRESSION
+
     best_hyperparams = fmin(fn=objective,
-                            space=SPACE,
+                            space=space,
                             algo=tpe.suggest,
                             max_evals=100,
                             trials=trials,
                             return_argmin=False)
 
-    model = model_train(data, data, features, target_variable, best_hyperparams)
+    model = model_train(data, data, features, target_variable, is_classification, best_hyperparams)
     logging.info("Finished hyper-parameter tuning...")
+
+    res = kFoldCrossValidation(k=3, data=data, features=features, target_variable=target_variable,
+                               is_classification=is_classification, param=best_hyperparams, debug=True)
 
     model.save_model(model_output_path)
     logging.info(f"Saved model to {model_output_path}...")
 
 
-@click.command()
-@click.option('--data_name', required=True, type = click.STRING)
+@click.command(name='train_model')
+@click.option('--data_name', required=True, type=click.STRING)
 @click.option('--target_variable', required=True, type=click.STRING)
 def train_model(data_name, target_variable):
-
     data_path = f'{INPUT}{data_name}_processed.csv'
     features_path = f'{INPUT}{data_name}_features.txt'
 
@@ -200,14 +263,14 @@ def train_model(data_name, target_variable):
     model_output_path = f'{OUTPUT}{data_name}_{target_variable}_model.json'
 
     data, features = utils.load_data(data_path, features_path, target_variable)
-    train_model_util(data, features, target_variable, model_output_path)
+    train_model_util(data, features, target_variable, False, DEFAULT_PARAMS_REGRESSION, model_output_path)
+
 
 @click.command(name='train_error_model')
 @click.option('--data_name', required=True, type=click.STRING)
 @click.option('--target_variable', required=True, type=click.STRING)
 @click.option('--use_pretrained_model', required=False, type=click.BOOL, default=True, show_default=True)
 def train_error_model(data_name, target_variable, use_pretrained_model):
-
     data_path = f'{INPUT}{data_name}_processed.csv'
     features_path = f'{INPUT}{data_name}_features.txt'
 
@@ -220,31 +283,34 @@ def train_error_model(data_name, target_variable, use_pretrained_model):
     data, features = utils.load_data(data_path, features_path, target_variable)
 
     if (use_pretrained_model and not os.path.exists(model_path)) or not use_pretrained_model:
-        train_model_util(data, features, target_variable, model_path)
+        train_model_util(data, features, target_variable, False, DEFAULT_PARAMS_REGRESSION, model_path)
 
     model = utils.load_model(model_path)
 
     predictions = utils.predict(model, data[features])
     errors = data[target_variable] - predictions
-    errors[np.abs(errors) < 5000] = 0
-    errors[np.abs(errors) > 0] = 1
+    errors[np.abs(errors) < 1000] = 0
+    errors[np.abs(errors) > 1000] = 1
+    errors = errors.astype(bool)
 
-    print(errors)
+    logging.info(f'There were {len(errors[errors == 0])} correctly classified profiles.')
+    logging.info(f'There were {len(errors[errors == 1])} inccorrectly classified profiles.')
 
     errors_feature = f'{model_name}_errors'
     data[errors_feature] = errors
 
     data = data[features + [errors_feature]]
 
-    train_model_util(data, features, errors_feature, error_model_path)
+    train_model_util(data, features, errors_feature, True, DEFAULT_PARAMS_CLASSIFICATION, error_model_path)
+
 
 @click.group()
 def cli():
     pass
 
+
 cli.add_command(train_error_model)
 cli.add_command(train_model)
-
 
 if __name__ == '__main__':
     log_fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -258,4 +324,3 @@ if __name__ == '__main__':
     load_dotenv(find_dotenv())
 
     cli()
-
