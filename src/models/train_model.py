@@ -1,5 +1,6 @@
 import sys
 import os
+from mlxtend.classifier import OneRClassifier
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import xgboost
@@ -151,6 +152,7 @@ def kFoldCrossValidation(k: int,
     mses = []
     mapes = []
     log_losses = []
+    accuracy_scores = []
 
     kf = KFold(n_splits=k)
     fold_num = 0
@@ -165,7 +167,9 @@ def kFoldCrossValidation(k: int,
 
         if is_classification:
             log_loss_value = log_loss(test_data[target_variable].values, test_preds)
+            acc_score = accuracy_score(test_data[target_variable], test_preds.astype(bool))
             log_losses.append(log_loss_value)
+            accuracy_scores.append(acc_score)
         else:
             mae = mean_absolute_error(test_data[target_variable].values, test_preds)
             mse = mean_squared_error(test_data[target_variable].values, test_preds)
@@ -178,6 +182,7 @@ def kFoldCrossValidation(k: int,
             if is_classification:
                 print(f"Summary for fold {fold_num}")
                 print("Log Loss is {}.".format(round(log_loss_value, 3)))
+                print("Accuracy score is {}.".format(round(log_loss_value, 3)))
                 print("-------------------------------------------------------------")
 
             else:
@@ -187,15 +192,20 @@ def kFoldCrossValidation(k: int,
                 print("Mean square error is {}.".format(round(mse, 3)))
                 print("Mean absolute percentage error is {}%.".format(round(mape * 100, 3)))
                 print("-------------------------------------------------------------")
+
     if is_classification:
         mean_log_loss = np.mean(log_losses)
         std_log_loss = np.std(log_losses)
+        mean_acc_score = np.mean(accuracy_scores)
+        std_acc_score = np.std(accuracy_scores)
 
         if debug:
             print(
                 f"Mean Log Loss over {k} fold Cross-validation is {round(mean_log_loss, 3)} ± {round(std_log_loss, 3)}.")
+            print(
+                f"Mean Accuracy score over {k} fold Cross-validation is {round(mean_acc_score, 3)} ± {round(std_acc_score, 3)}.")
 
-        return mean_log_loss, std_log_loss
+        return mean_log_loss, mean_acc_score
 
     else:
         mMae, sMae = np.mean(maes), np.std(maes)
@@ -213,19 +223,17 @@ def kFoldCrossValidation(k: int,
             print(f"Mean RMSE over {k} fold Cross-validation is {rmRMse} ± {rsRMse}%.")
             print(f"Mean MAPE over {k} fold Cross-validation is {rmMape} ± {rsMape}%.")
 
-        return mae, mse, mape
-
+        return mMae, mRMse, mMape
 
 def train_model_util(data: pd.DataFrame, features: list, target_variable: str, is_classification: bool, params: dict,
                      model_output_path: str):
-    train_data, test_data = train_test_split(data, test_size=0.2, random_state=42)
     logging.info("Removed columns that are not used and nan values on target variable...")
     trials = Trials()
-
     def objective(space):
         params = space.copy()
         loss = kFoldCrossValidation(k=3, data=data, features=features, target_variable=target_variable,
                                     is_classification=is_classification, param=params, debug=False)
+        print(f'Loss is {loss[0]}')
         return {"loss": loss[0], 'status': STATUS_OK}
 
     logging.info("Starting hyper-parameter tuning...")
@@ -266,6 +274,28 @@ def train_model(data_name, target_variable):
     train_model_util(data, features, target_variable, False, DEFAULT_PARAMS_REGRESSION, model_output_path)
 
 
+def get_feature_quartiles(data : pd.DataFrame):
+    data_quartiles = data.copy()
+    for column in data.columns:
+        if pd.api.types.is_numeric_dtype(data[column]):
+            if data[column].nunique() >= 4:
+                data_quartiles[column] = pd.qcut(data[column], q=[0, 0.25, 0.5, 0.75, 1], labels=False, duplicates = 'drop')
+
+    return data_quartiles
+
+def evaluate_baseline_error_model(data : pd.DataFrame, features : list, target_variable : str):
+    train_data, test_data = train_test_split(data, test_size=0.2, random_state=42)
+    train_data[features] = get_feature_quartiles(train_data[features])
+    test_data[features] = get_feature_quartiles(test_data[features])
+    print(train_data[features].head())
+    baseline_error_model = OneRClassifier()
+    baseline_error_model.fit(train_data[features].values, train_data[target_variable].values)
+    baseline_error_model_preds = baseline_error_model.predict(test_data[features].values)
+
+    logging.info(f"Basline error models Log loss is {log_loss(test_data[target_variable], baseline_error_model_preds)}.")
+    logging.info(f"Basline error models Accuracy score is {accuracy_score(test_data[target_variable], baseline_error_model_preds)}.")
+
+
 @click.command(name='train_error_model')
 @click.option('--data_name', required=True, type=click.STRING)
 @click.option('--target_variable', required=True, type=click.STRING)
@@ -293,15 +323,15 @@ def train_error_model(data_name, target_variable, use_pretrained_model):
     errors[np.abs(errors) > 1000] = 1
     errors = errors.astype(bool)
 
-    logging.info(f'There were {len(errors[errors == 0])} correctly classified profiles.')
-    logging.info(f'There were {len(errors[errors == 1])} inccorrectly classified profiles.')
-
     errors_feature = f'{model_name}_errors'
     data[errors_feature] = errors
 
     data = data[features + [errors_feature]]
 
+    evaluate_baseline_error_model(data, features, errors_feature)
+
     train_model_util(data, features, errors_feature, True, DEFAULT_PARAMS_CLASSIFICATION, error_model_path)
+
 
 
 @click.group()
