@@ -54,12 +54,12 @@ def validate_model_name(ctx, param, value):
     return value
 
 
-@click.command()
+@click.command(name = "model_predict")
 @click.option("--data_name", required=True, type=click.STRING,
               help="Name of to the processed data file (without file extension).")
 @click.option("--all", is_flag=True, help="Predict using all available compatible models.")
 @click.option("--model_name", callback=validate_model_name, help="Name of the model to use for prediction.")
-def main(data_name, all, model_name):
+def model_predict(data_name, all, model_name):
     # Load the data
     data_path = f'{INPUT_DATA}{data_name}_processed.csv'
     features_path = f'{INPUT_DATA}{data_name}_features.txt'
@@ -83,6 +83,13 @@ def main(data_name, all, model_name):
             return
 
         predictions = utils.predict(model, data)
+        logging.info(f"Predictions for {model_name}: {predictions}")
+
+@click.group()
+def cli():
+    pass
+
+cli.add_command(model_predict)
 
 
 if __name__ == "__main__":
@@ -92,4 +99,4 @@ if __name__ == "__main__":
     # not used in this stub but often useful for finding various files
     project_dir = Path(__file__).resolve().parents[2]
 
-    main()
+    cli()
