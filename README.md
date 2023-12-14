@@ -1,7 +1,9 @@
 market_models
 ==============================
 
-Modeling competitor quotes (primary Casco) using xgboost and quantile regression.
+Modeling competitor quotes (prima.ry Casco) using xgboost and quantile regression.
+
+All the scripts from src/ are meant to runned from it so current workting directory should be src.
 
 Project Organization
 ------------
