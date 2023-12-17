@@ -30,9 +30,6 @@ def prepareDir(dir):
         os.remove(dir + file)
 
 
-INPUT = '../data/processed/'
-OUTPUT = '../models/'
-
 TEST_SIZE = 0.1
 RANDOM_STATE = 42
 
@@ -264,11 +261,13 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
 @click.option('--data_name', required=True, type=click.STRING)
 @click.option('--target_variable', required=True, type=click.STRING)
 def train_model(data_name, target_variable):
-    data_path = f'{INPUT}{data_name}_processed.csv'
-    features_path = f'{INPUT}{data_name}_features.txt'
+
+    data_path = utils.get_processed_data_path(data_name)
+    features_path = utils.get_features_path(data_name)
 
     pred_target_variable = f'predicted_{target_variable}'
-    model_output_path = f'{OUTPUT}{data_name}_{target_variable}_model.json'
+    model_name = utils.get_model_name(data_name, target_variable)
+    model_output_path = utils.get_model_path(model_name)
 
     data, features = utils.load_data(data_path, features_path, target_variable)
     train_model_util(data, features, target_variable, False, DEFAULT_PARAMS_REGRESSION, model_output_path)
@@ -287,7 +286,6 @@ def evaluate_baseline_error_model(data : pd.DataFrame, features : list, target_v
     train_data, test_data = train_test_split(data, test_size=0.2, random_state=42)
     train_data[features] = get_feature_quartiles(train_data[features])
     test_data[features] = get_feature_quartiles(test_data[features])
-    print(train_data[features].head())
     baseline_error_model = OneRClassifier()
     baseline_error_model.fit(train_data[features].values, train_data[target_variable].values)
     baseline_error_model_preds = baseline_error_model.predict(test_data[features].values)
@@ -301,14 +299,15 @@ def evaluate_baseline_error_model(data : pd.DataFrame, features : list, target_v
 @click.option('--target_variable', required=True, type=click.STRING)
 @click.option('--use_pretrained_model', required=False, type=click.BOOL, default=True, show_default=True)
 def train_error_model(data_name, target_variable, use_pretrained_model):
-    data_path = f'{INPUT}{data_name}_processed.csv'
-    features_path = f'{INPUT}{data_name}_features.txt'
 
-    model_name = f'{data_name}_{target_variable}_model'
-    error_model_name = f'{data_name}_{target_variable}_error_model'
+    data_path = utils.get_processed_data_path(data_name)
+    features_path = utils.get_features_path(data_name)
 
-    model_path = f'{OUTPUT}{model_name}.json'
-    error_model_path = f'{OUTPUT}{error_model_name}.json'
+    model_name = utils.get_model_name(data_name, target_variable)
+    error_model_name = utils.get_error_model_name(data_name, target_variable)
+
+    model_path = utils.get_model_path(model_name)
+    error_model_path = utils.get_error_model_path(error_model_name)
 
     data, features = utils.load_data(data_path, features_path, target_variable)
 

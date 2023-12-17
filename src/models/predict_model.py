@@ -60,10 +60,10 @@ def validate_model_name(ctx, param, value):
 @click.option("--all", is_flag=True, help="Predict using all available compatible models.")
 @click.option("--model_name", callback=validate_model_name, help="Name of the model to use for prediction.")
 def model_predict(data_name, all, model_name):
-    # Load the data
-    data_path = f'{INPUT_DATA}{data_name}_processed.csv'
-    features_path = f'{INPUT_DATA}{data_name}_features.txt'
-    model_path = f'{INPUT_MODEL}{model_name}.json'
+
+    data_path = utils.get_processed_data_path(data_name)
+    features_path = utils.get_features_path(data_name)
+    model_path = utils.get_model_path(model_name)
 
     data, features = utils.load_data(data_path, features_path)
 

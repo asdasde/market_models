@@ -9,8 +9,6 @@ from dotenv import find_dotenv, load_dotenv
 import pandas as pd
 import utils
 
-INPUT = '../data/raw/'
-OUTPUT = '../data/processed/'
 
 def add_bracket_features(data, features, brackets_path):
     brackets = pd.read_json( brackets_path, orient='index').T
@@ -21,32 +19,32 @@ def add_bracket_features(data, features, brackets_path):
         features[features.index(feature)] = f'{feature}_cut'
     return data, features
 
+def build_features(data : pd.DataFrame):
+    pass
+
 
 @click.command()
-@click.argument('input_file', type=click.STRING)
+@click.argument('data_name', type=click.STRING)
 @click.option('--only_convert_to_csv', is_flag=True, default=False)
 @click.option('--index_col', default='id_case', help = 'annotation of index column (id_case, policyNr)')
 @click.option('--price_annotation', default = '_price', help = 'annotation of price columns (_price, _newprice)')
-def main(input_file, only_convert_to_csv, index_col, price_annotation):
+def main(data_name, only_convert_to_csv, index_col, price_annotation):
 
     logger = logging.getLogger(__name__)
     logger.info('making final data set from raw data')
 
-    input_name = Path(input_file).stem
-
-    input_filepath = f'{INPUT}{input_file}'
-    output_filepath = f'{OUTPUT}{input_name}_processed.csv'
+    raw_data_path = utils.get_raw_data_path(data_name)
+    processed_data_path = utils.get_processed_data_path(data_name)
+    features_file_path = utils.get_features_path(data_name)
 
     # Load the new data
-    print(input_filepath)
-    data = utils.read_file(input_filepath)
+    data = utils.read_file(raw_data_path)
 
     if only_convert_to_csv:
         data['BonusMalus'] = data['BonusMalus'].astype('category')
         data['CarMake'] = data['CarMake'].astype('category')
-        data.to_csv(output_filepath)
-        logger.info("Exported dataset to {}".format(output_filepath))
-        features_file_path = f'../data/processed/{input_name}_features.txt'
+        data.to_csv(processed_data_path)
+        logger.info("Exported dataset to {}".format(processed_data_path))
         with open(features_file_path, 'w') as file:
 
             feature_cols = [col for col in data.columns if '_price' not in col and col not in ['id_case', 'DateCrawled']]
@@ -75,11 +73,11 @@ def main(input_file, only_convert_to_csv, index_col, price_annotation):
     data['BonusMalus'] = data['BonusMalus'].astype('category')
     data['CarMake'] = data['CarMake'].astype('category')
 
-    data.to_csv(output_filepath)
-    logger.info("Exported dataset to {}".format(output_filepath))
+    data.to_csv(processed_data_path)
+    logger.info("Exported dataset to {}".format(processed_data_path))
 
     # Save features to a text file
-    features_file_path = f'{output_filepath}{input_name}_features.txt'
+    features_file_path = utils.get_features_path(data_name)
     with open(features_file_path, 'w') as file:
         feature_cols = [col for col in data.columns if '_price' not in col]
         for feature in feature_cols:
