@@ -1,9 +1,5 @@
-# -*- coding: utf-8 -*-
 import sys
 import os
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import click
 import logging
 from pathlib import Path
@@ -14,19 +10,16 @@ import numpy as np
 import re
 import random
 import datetime
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import utils
-from bs4 import BeautifulSoup
-
 
 CURRENT_YEAR = datetime.datetime.now().year
-
 
 def range_to_list(x):
     n1, n2 = re.split(r'-|–', x)
     n1, n2 = int(n1), int(n2) + 1
 
     return list(range(n1, + n2))
-
 
 def get_from_range(x):
     l = []
@@ -77,7 +70,7 @@ def get_car_model(prof, cars):
 
     subset = cars[(cars['car_make_year'] == CURRENT_YEAR - prof['CarAge']) &
                   (cars['car_make'] == prof['CarMake'].upper()) &
-                  (cars['kw'].astype(int).between(kw_min, kw_max))]
+                  (cars['kw'].between(kw_min, kw_max))]
 
     if not subset.empty:
         return subset[['car_model', 'car_trim_id', 'kw', 'ccm', 'kg', 'car_value']].sample(n=1).iloc[0].values
@@ -94,80 +87,99 @@ def bm(val):
         return 11 + int(val[1:])
 
 
+def sample_profiles(samples, params, others, policy_start_date, error_model):
+    profile_columns_dtypes = utils.NETRISK_CASCO_DTYPES
+    profile_columns = list(profile_columns_dtypes.keys())
 
-def sample_profiles(samples, params, others, policy_start_date):
-    profiles = pd.DataFrame(index=range(samples),
-                            columns=['Age', 'PostalCode', 'BonusMalus', 'kw', 'CarMake', 'CarAge'])
-    profiles = profiles.dropna()
+    logging.info("Started generating samples")
 
-    while len(profiles) < samples:
-        sample = pd.DataFrame(index=range(samples),
-                              columns=['Age', 'PostalCode', 'BonusMalus', 'kw', 'CarMake', 'CarAge', 'car_value'])
+    samples_list = []
+    tot = 0
+    cnt = 0
+
+
+
+    samples *= 3
+    while tot < samples / 3:
+
+        sample = pd.DataFrame()
         sample['Age'] = sample_univariate(params['age_params']['cat'].values, params['age_params']['prob'].values,
                                           num_samples=samples)
+
+        sample['isRecent'] = True
+
+        sample['LicenseAge'] = 18
+
+
         sample['PostalCode'] = sample_univariate(params['postal_code_params']['cat'].values,
                                                  params['postal_code_params']['prob'].values, num_samples=samples)
+
         sample['BonusMalus'] = sample_univariate(params['bonus_malus_params']['cat'].values,
                                                  params['bonus_malus_params']['prob'].values, num_samples=samples,
                                                  range=False)
+
+        sample['BonusMalusCode'] = sample['BonusMalus'].apply(lambda x: bm(x))
+
         sample['kw'] = sample_univariate(params['power_params']['cat'].values, params['power_params']['prob'].values,
                                          num_samples=samples, range=False)
 
-
         sample['CarMake'] = sample_univariate(params['car_make_params']['cat'].values,
-                                               params['car_make_params']['prob'].values, num_samples=samples,
-                                               is_car_make=True, range=False)
-        sample['CarAge'] = getCarAgeAlternative(samples)
-        cars = others['netrisk_cars'][others['netrisk_cars']['car_make_year'] >= CURRENT_YEAR - sample['CarAge'].max()]
-        car_model_data = np.array([get_car_model(x, cars) for _, x in sample.iterrows()])
+                                              params['car_make_params']['prob'].values, num_samples=samples,
+                                              is_car_make=True, range=False)
 
+        sample['CarAge'] = getCarAgeAlternative(samples)
+
+        cars = others['netrisk_cars'][others['netrisk_cars']['car_make_year'] >= CURRENT_YEAR - sample['CarAge'].max()]
+        cars = cars[cars['car_make'].isin(sample['CarMake'].apply(lambda x: x.upper()).unique().tolist())]
+        car_model_data = np.array([get_car_model(x, cars) for _, x in sample.iterrows()])
         sample[['CarModel', 'CarModelSpecific', 'kw', 'ccm', 'kg', 'car_value']] = car_model_data
 
-        sample['DateCrawled'] = policy_start_date
-
         sample = sample.dropna(subset=['CarModel'])
+        sample['CarMake'] = sample['CarMake'].replace({'VOLKSWAGEN': 'VW'})
+
         sample = sample[~(sample['kw'] == -1)]
+
+        sample['car_value'] = sample['car_value'] * utils.FORINT_TO_EUR
+
         sample = sample[sample['PostalCode'].isin(others['hungary_postal_codes']['postal_code'].tolist())]
         sample = pd.merge(sample, others['hungary_postal_codes'][['postal_code', 'latitude', 'longitude']],
                           left_on='PostalCode', right_on='postal_code', how='left').rename(
             columns={'latitude': 'Latitude', 'longitude': 'Longitude'})
-        sample = pd.merge(sample, others['aegon_postal_categories'])
+
+
+
+        sample = pd.merge(sample, others['aegon_postal_categories'], left_on = 'PostalCode', right_on = 'PostalCode', how = 'left')
+        sample['Category'] = sample['Category'].fillna(8)
+
+        sample['PostalCode2'] = sample['PostalCode'].apply(lambda x: str(x)[: 2])
+        sample['PostalCode3'] = sample['PostalCode'].apply(lambda x: str(x)[: 3])
+
         sample['CarMake'] = sample['CarMake'].str.upper()
-        sample = sample[
-            ~((sample['BonusMalus'] > 'B5') & (sample['BonusMalus'] < 'M1') & (sample['Age'] < 29))]
-        sample.index = range(len(sample))
-        profiles = pd.concat([profiles, sample], axis=0)
+        sample = sample[~((sample['BonusMalus'] > 'B05') & (sample['BonusMalus'] < 'M01') & (sample['Age'] < 29))]
+        sample['CarMakerCategory'] = 1
 
+        for feature, dtype in profile_columns_dtypes.items():
+            sample[feature] = sample[feature].astype(dtype)
+        sample = sample[profile_columns]
+
+        predictions = utils.predict(error_model, sample)
+        predictions = utils.apply_threshold(predictions, utils.ERROR_MODEL_CLASSIFICATION_THRESHOLD)
+
+        sample = sample.loc[predictions]
+
+        samples_list.append(sample)
+
+        tot += len(sample)
+        cnt += 1
+
+        logging.info(f"Generated {tot}/{samples // 3} profiles, in {cnt} tries")
+
+    profiles = pd.concat(samples_list).iloc[ : samples // 3]
     profiles.index = range(len(profiles))
-    profiles = profiles[profiles.index < samples]
-    profiles['Age'] = profiles['Age'].astype(int)
-    profiles['LicenseAge'] = 18
-    profiles['BonusMalus'] = profiles['BonusMalus'].astype('category')
-    profiles['CarAge'] = profiles['CarAge'].astype(int)
-    profiles['CarMake'] = profiles['CarMake'].astype('category').replace({'VOLKSWAGEN' : 'VW'})
-    profiles['ccm'] = profiles['ccm'].astype(int)
-    profiles['kw'] = profiles['kw'].astype(int)
-    profiles['kg'] = profiles['kg'].astype(int)
-    profiles['car_value'] = profiles['car_value'].astype(float) * utils.FORINT_TO_EUR
-    profiles['PostalCode2'] = profiles['PostalCode'].apply(lambda x: str(x)[: 2]).astype(float)
-    profiles['PostalCode3'] = profiles['PostalCode'].apply(lambda x: str(x)[: 3]).astype(float)
-    profiles['PostalCode'] = profiles['PostalCode'].astype(int)
-    profiles['Latitude'] = profiles['Latitude'].astype(float)
-    profiles['Longitude'] = profiles['Longitude'].astype(float)
-    profiles['CarMakerCategory'] = 1
-    profiles['DateCrawled'] = profiles['DateCrawled'].astype('category')
-    profiles['isRecent'] = profiles['DateCrawled'].apply(lambda x: x.split('_')[1] > '04')
-    profiles['BonusMalusCode'] = profiles['BonusMalus'].apply(lambda x: bm(x))
-
-    profiles = profiles[['isRecent', 'CarMake', 'CarAge', 'ccm', 'kw', 'kg', 'car_value', 'CarMakerCategory', 'PostalCode',
-              'PostalCode2', 'PostalCode3', 'Category', 'Longitude', 'Latitude', 'Age', 'LicenseAge', 'BonusMalus',
-              'BonusMalusCode']]
-
     return profiles
 
+
 def load_distribution(service, params_v):
-
-
     params_path = utils.get_params_path(service, params_v)
     other_path = utils.get_others_path(service)
 
@@ -191,32 +203,22 @@ def load_distribution(service, params_v):
 
 
 @click.command(name='sample_crawling_data')
+@click.option('--error_model_name', required=True, type = click.STRING)
 @click.option('--service', default='netrisk_casco', type=click.STRING)
 @click.option('--params_v', default='v1', type=click.STRING)
 @click.option('--policy_start_date', default=None, type=click.STRING, help='Should be in YYYY_MM_DD format.')
 @click.option('--n', default=1000, type=click.INT, help='Number of profiles to sample.')
-def sample_crawling_data(service, params_v, policy_start_date, n):
+def sample_crawling_data(error_model_name, service, params_v, policy_start_date, n):
+
+    error_model_path = utils.get_error_model_path(error_model_name)
+
+    error_model = utils.load_model(error_model_path)
+
     params, others = load_distribution(service, params_v)
 
-    sampled_data = sample_profiles(n, params, others, policy_start_date)
+    sampled_data = sample_profiles(n, params, others, policy_start_date, error_model)
 
     print(sampled_data.head())
-
-
-    data_name = 'netrisk_casco_2023_11_14__2023_11_20__2023_12_12'
-    target_variable = 'ALFA_price'
-
-    model_name = utils.get_error_model_name(data_name, target_variable)
-    model_path = utils.get_error_model_path(model_name)
-
-    model = utils.load_model(model_path)
-
-    predictions = utils.predict(model, sampled_data)
-    predictions[predictions < 0.8] = 0
-    predictions[predictions > 0.8] = 1
-    print(predictions)
-
-    print(sampled_data.loc[predictions])
 
 
 @click.group()

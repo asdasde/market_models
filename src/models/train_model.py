@@ -1,33 +1,33 @@
-import sys
 import os
-from mlxtend.classifier import OneRClassifier
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import xgboost
+import sys
+from pathlib import Path
 from typing import Optional
 
-from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error, mean_squared_error, accuracy_score, \
-    log_loss
-from sklearn.model_selection import KFold
-from hyperopt import STATUS_OK, Trials, fmin, hp, tpe
-
-import pandas as pd
-import numpy as np
-from sklearn.model_selection import train_test_split
-
-xgboost.set_config(verbosity=0)
 import click
 import logging
-from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from sklearn.metrics import (
+    mean_absolute_error,
+    mean_absolute_percentage_error,
+    mean_squared_error,
+    accuracy_score,
+    log_loss,
+)
+from sklearn.model_selection import KFold, train_test_split
+
+from mlxtend.classifier import OneRClassifier
+
+import xgboost
+
+from hyperopt import STATUS_OK, Trials, fmin, hp, tpe
+
 from dotenv import find_dotenv, load_dotenv
+
 import utils
 
-
-def prepareDir(dir):
-    if not os.path.isdir(dir):
-        os.mkdir(dir)
-    for file in os.listdir(dir):
-        os.remove(dir + file)
 
 
 TEST_SIZE = 0.1
