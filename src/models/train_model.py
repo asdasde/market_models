@@ -26,6 +26,8 @@ from hyperopt import STATUS_OK, Trials, fmin, hp, tpe
 
 from dotenv import find_dotenv, load_dotenv
 
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import utils
 
 
@@ -105,6 +107,7 @@ def model_train(train_data: pd.DataFrame,
                 target_variable: str,
                 is_classification: bool,
                 param: dict = None) -> xgboost.Booster:
+
     if param is None:
         if is_classification:
             param = DEFAULT_PARAMS_CLASSIFICATION.copy()
@@ -257,6 +260,9 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
     logging.info(f"Saved model to {model_output_path}...")
 
 
+
+
+
 @click.command(name='train_model')
 @click.option('--data_name', required=True, type=click.STRING)
 @click.option('--target_variable', required=True, type=click.STRING)
@@ -330,6 +336,7 @@ def train_error_model(data_name, target_variable, use_pretrained_model):
     evaluate_baseline_error_model(data, features, errors_feature)
 
     train_model_util(data, features, errors_feature, True, DEFAULT_PARAMS_CLASSIFICATION, error_model_path)
+
 
 
 

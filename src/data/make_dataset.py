@@ -202,10 +202,17 @@ def load_distribution(service, params_v):
     return params, others
 
 
+def validate_error_model_name(ctx, param, value):
+    all_option = ctx.params.get('model_ensemble')
+    if not all_option and not value:
+        raise click.BadParameter('--error_model is required when --all_models is False.')
+    return value
+
+
 @click.command(name='sample_crawling_data')
-@click.option('--error_model_name', required=True, type = click.STRING)
-@click.option('--service', default='netrisk_casco', type=click.STRING)
-@click.option('--params_v', default='v1', type=click.STRING)
+@click.option('--error_model_name', type = click.STRING)
+@click.option('--service', default='netrisk_casco', type=click.STRING, help = 'Currently only supports netrisk casco')
+@click.option('--params_v', default='v1', type=click.STRING, help = 'Use it to switch between versions of distributions.')
 @click.option('--policy_start_date', default=None, type=click.STRING, help='Should be in YYYY_MM_DD format.')
 @click.option('--n', default=1000, type=click.INT, help='Number of profiles to sample.')
 def sample_crawling_data(error_model_name, service, params_v, policy_start_date, n):
@@ -219,6 +226,7 @@ def sample_crawling_data(error_model_name, service, params_v, policy_start_date,
     sampled_data = sample_profiles(n, params, others, policy_start_date, error_model)
 
     print(sampled_data.head())
+
 
 
 @click.group()

@@ -16,14 +16,17 @@ RAW_DATA_PATH = '../data/raw/'
 PREDICTIONS_PATH = '../data/predictions/'
 MODELS_PATH = '../models/'
 ENCODERS_PATH = '../models/encoders/'
+REPORTS_PATH = '../reports/'
 
 
-def prepareDir(dir : str):
-    if not os.path.isdir(dir):
-        os.mkdir(dir)
-    for file in os.listdir(dir):
-        os.remove(dir + file)
-
+def prepareDir(dir_path: str):
+    if not os.path.exists(dir_path):
+        os.mkdir(dir_path)
+    else:
+        for file in os.listdir(dir_path):
+            file_path = os.path.join(dir_path, file)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
 
 def detect_csv_delimiter(file_path : str) -> str:
     with open(file_path, 'r', newline='') as file:
@@ -65,7 +68,11 @@ def get_others_path(service : str) -> str:
 def get_encoder_path(feature : str) -> str:
     return f'{ENCODERS_PATH}{feature}_encoder.pkl'
 
+def get_report_path(model_name : str) -> str:
+    return f'{REPORTS_PATH}{model_name}/'
 
+def get_report_resource_path(model_name : str) -> str:
+    return f'{REPORTS_PATH}{model_name}/resources/'
 
 
 NAME_MAPPING = {
@@ -97,6 +104,7 @@ BONUS_MALUS_CLASSES_DICT = dict(zip(BONUS_MALUS_CLASSES_BAD, BONUS_MALUS_CLASSES
 FORINT_TO_EUR = 0.0026
 ERROR_MODEL_CLASSIFICATION_THRESHOLD = 0.8
 
+QUANTILE_RANGE = [0, 0.01, 0.03, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.97, 0.99, 1]
 def read_file(file_path : str) -> pd.DataFrame:
     file_extension = file_path.split('.')[-1].lower()
     if file_extension == 'csv':
