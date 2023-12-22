@@ -29,6 +29,7 @@ from dotenv import find_dotenv, load_dotenv
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import utils
+import models.make_report as make_report
 
 
 
@@ -108,21 +109,27 @@ def model_train(train_data: pd.DataFrame,
                 is_classification: bool,
                 param: dict = None) -> xgboost.Booster:
 
+    param_ = None
     if param is None:
         if is_classification:
-            param = DEFAULT_PARAMS_CLASSIFICATION.copy()
+            param_ = DEFAULT_PARAMS_CLASSIFICATION.copy()
         else:
-            param = DEFAULT_PARAMS_REGRESSION.copy()
+            param_ = DEFAULT_PARAMS_REGRESSION.copy()
+    else:
+        param_ = param.copy()
+
 
     dtrain = makeDMatrix(train_data[features], train_data[target_variable], is_classification=is_classification)
     dtest = makeDMatrix(test_data[features], test_data[target_variable], is_classification=is_classification)
 
-    param['max_depth'] = int(param['max_depth'])
-    param['eval_metric'] = 'logloss' if is_classification else 'mae'
+    num_rounds = param_['n_estimators']
+    del param_['n_estimators']
+    param_['max_depth'] = int(param_['max_depth'])
+    param_['eval_metric'] = 'logloss' if is_classification else 'mae'
 
     eval_list = [(dtrain, 'train'), (dtest, 'eval')]
 
-    return xgboost.train(param, dtrain, num_boost_round=param['n_estimators'], evals=eval_list, verbose_eval=False)
+    return xgboost.train(param_, dtrain, num_boost_round = num_rounds, evals=eval_list, verbose_eval=False)
 
 
 def merge_predictions(model: xgboost.Booster,
@@ -246,7 +253,7 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
     best_hyperparams = fmin(fn=objective,
                             space=space,
                             algo=tpe.suggest,
-                            max_evals=100,
+                            max_evals=10,
                             trials=trials,
                             return_argmin=False)
 
@@ -258,7 +265,7 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
 
     model.save_model(model_output_path)
     logging.info(f"Saved model to {model_output_path}...")
-
+    return model
 
 
 
@@ -268,15 +275,17 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
 @click.option('--target_variable', required=True, type=click.STRING)
 def train_model(data_name, target_variable):
 
+    model_name = utils.get_model_name(data_name, target_variable)
+
     data_path = utils.get_processed_data_path(data_name)
     features_path = utils.get_features_path(data_name)
-
-    pred_target_variable = f'predicted_{target_variable}'
-    model_name = utils.get_model_name(data_name, target_variable)
-    model_output_path = utils.get_model_path(model_name)
+    model_path = utils.get_model_path(model_name)
+    report_path = utils.get_report_path(model_name)
+    report_resources_path = utils.get_report_resource_path(model_name)
 
     data, features = utils.load_data(data_path, features_path, target_variable)
-    train_model_util(data, features, target_variable, False, DEFAULT_PARAMS_REGRESSION, model_output_path)
+    model = train_model_util(data, features, target_variable, False, DEFAULT_PARAMS_REGRESSION, model_path)
+    make_report.generate_report_util(model, data, features, target_variable, report_path, report_resources_path)
 
 
 def get_feature_quartiles(data : pd.DataFrame):
@@ -306,12 +315,11 @@ def evaluate_baseline_error_model(data : pd.DataFrame, features : list, target_v
 @click.option('--use_pretrained_model', required=False, type=click.BOOL, default=True, show_default=True)
 def train_error_model(data_name, target_variable, use_pretrained_model):
 
-    data_path = utils.get_processed_data_path(data_name)
-    features_path = utils.get_features_path(data_name)
-
     model_name = utils.get_model_name(data_name, target_variable)
     error_model_name = utils.get_error_model_name(data_name, target_variable)
 
+    data_path = utils.get_processed_data_path(data_name)
+    features_path = utils.get_features_path(data_name)
     model_path = utils.get_model_path(model_name)
     error_model_path = utils.get_error_model_path(error_model_name)
 
@@ -336,6 +344,7 @@ def train_error_model(data_name, target_variable, use_pretrained_model):
     evaluate_baseline_error_model(data, features, errors_feature)
 
     train_model_util(data, features, errors_feature, True, DEFAULT_PARAMS_CLASSIFICATION, error_model_path)
+
 
 
 

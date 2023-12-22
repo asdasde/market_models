@@ -12,6 +12,7 @@ import xgboost
 
 DISTRIBUTION_PATH = '../data/external/distributions/'
 PROCESSED_DATA_PATH = '../data/processed/'
+INTERIM_DATA_PATH = '../data/interim/'
 RAW_DATA_PATH = '../data/raw/'
 PREDICTIONS_PATH = '../data/predictions/'
 MODELS_PATH = '../models/'
@@ -38,6 +39,9 @@ def get_raw_data_path(data_name : str) -> str:
     return f'{RAW_DATA_PATH}{data_name}.csv'
 def get_processed_data_path(data_name : str) -> str:
     return f'{PROCESSED_DATA_PATH}{data_name}_processed.csv'
+
+def get_interim_data_path(data_name : str) -> str:
+    return f'{INTERIM_DATA_PATH}{data_name}_before_crawling.csv'
 
 def get_predictions_all_path(data_name : str) -> str:
     return f'{PREDICTIONS_PATH}{data_name}_all_predictions.csv'
@@ -137,7 +141,7 @@ def apply_features(data : pd.DataFrame, features : list, feature_dtypes : dict) 
 
     return data
 
-def load_data(data_path : str, features_path : str, target_variable : str = None) -> tuple:
+def load_data(data_path : str, features_path : str, target_variable : str = None, apply_feature_dtypes : bool = True) -> tuple:
     data = read_file(data_path)
     logging.info("Imported data...")
     with open(features_path) as file:
@@ -146,7 +150,8 @@ def load_data(data_path : str, features_path : str, target_variable : str = None
         feature_dtypes = {feature.split(',')[0]: feature.split(',')[1] for feature in features}
         features = [feature.split(',')[0] for feature in features]
 
-    data = apply_features(data, features, feature_dtypes)
+    if apply_feature_dtypes:
+        data = apply_features(data, features, feature_dtypes)
 
     logging.info("Imported feature data...")
 

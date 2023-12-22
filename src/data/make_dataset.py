@@ -160,9 +160,8 @@ def sample_profiles(samples, params, others, policy_start_date, error_model):
 
         for feature, dtype in profile_columns_dtypes.items():
             sample[feature] = sample[feature].astype(dtype)
-        sample = sample[profile_columns]
 
-        predictions = utils.predict(error_model, sample)
+        predictions = utils.predict(error_model, sample[profile_columns])
         predictions = utils.apply_threshold(predictions, utils.ERROR_MODEL_CLASSIFICATION_THRESHOLD)
 
         sample = sample.loc[predictions]
@@ -218,15 +217,18 @@ def validate_error_model_name(ctx, param, value):
 def sample_crawling_data(error_model_name, service, params_v, policy_start_date, n):
 
     error_model_path = utils.get_error_model_path(error_model_name)
-
     error_model = utils.load_model(error_model_path)
+    logging.info("Loaded the error model.")
 
     params, others = load_distribution(service, params_v)
+    logging.info("Loaded the distributions.")
 
     sampled_data = sample_profiles(n, params, others, policy_start_date, error_model)
 
-    print(sampled_data.head())
-
+    sampled_data_name = "sampled_data"
+    sampled_data_path = utils.get_interim_data_path(sampled_data_name)
+    sampled_data.to_csv(sampled_data_path)
+    logging.info(f"Exported sampled data to {sampled_data_path}")
 
 
 @click.group()
