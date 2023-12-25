@@ -9,6 +9,8 @@ from matplotlib.ticker import PercentFormatter
 from dotenv import find_dotenv, load_dotenv
 from pathlib import Path
 import logging
+from PIL import Image
+
 
 import os
 
@@ -89,7 +91,6 @@ def partial_dependence_analysis(model: xgboost.Booster,
         else:
             feature_range = np.linspace(data[feature].min(), data[feature].max(), grid_resolution)
 
-        logging.info(f"feature {feature} range: {feature_range}")
         partial_dependence_values = []
         for value in feature_range:
             data_copy = data.copy()
@@ -195,9 +196,6 @@ def plot_real_vs_predicted_quantiles_by_feature(data: pd.DataFrame, predictions:
     plt.savefig(f'{report_resources_path}real_vs_predicted_quantiles_by_{feature}.jpg')
     plt.close()
 
-import os
-from PIL import Image
-
 def make_pdf(reprot_resources_path : str, report_path : str):
     if not os.path.exists(reprot_resources_path):
         raise ValueError(f"Image directory does not exist: {reprot_resources_path}")
@@ -216,7 +214,7 @@ def make_pdf(reprot_resources_path : str, report_path : str):
 
     with open(report_path, "wb") as pdf_file:
         images[0].save( pdf_file, "PDF", resolution=100.0, save_all=True, append_images=images[1:])
-def generate_report_util(model: xgboost.Booster, data: pd.DataFrame, features: list, target_variable: str, report_path: str, report_resources_path: str):
+def generate_report_util(model: xgboost.Booster, data: pd.DataFrame, features: list, target_variable: str, out_of_sample_predictions : pd.Series, report_path: str, report_resources_path: str):
     logging.info("Preparing directories for the report.")
     utils.prepareDir(report_path)
     utils.prepareDir(report_resources_path)
@@ -225,12 +223,12 @@ def generate_report_util(model: xgboost.Booster, data: pd.DataFrame, features: l
     make_data_overview(data, report_resources_path)
 
     real = data[target_variable]
-    predictions = utils.predict(model, data[features])
-    errors = real - predictions
+    #predictions = utils.predict(model, data[features])
+    errors = real - out_of_sample_predictions
     errors_percentage = errors / data[target_variable] * 100
 
     logging.info("Making error quantiles.")
-    make_error_quantiles(real, predictions, report_resources_path)
+    make_error_quantiles(real, out_of_sample_predictions, report_resources_path)
 
     logging.info("Ploting error percentage distribution.")
     plot_hist_error_percentage(errors_percentage, report_resources_path)
@@ -245,11 +243,11 @@ def generate_report_util(model: xgboost.Booster, data: pd.DataFrame, features: l
     plot_pdps(features, pdp_dict, report_resources_path)
 
     logging.info("Plotting real vs predicted quantiles.")
-    plot_real_vs_predicted_quantiles(real, predictions, report_resources_path)
+    plot_real_vs_predicted_quantiles(real, out_of_sample_predictions, report_resources_path)
 
     logging.info("Plotting real vs predicted quantiles by feature.")
     for feature in features:
-        plot_real_vs_predicted_quantiles_by_feature(data, predictions, feature, target_variable, report_resources_path)
+        plot_real_vs_predicted_quantiles_by_feature(data, out_of_sample_predictions, feature, target_variable, report_resources_path)
 
     make_pdf(report_resources_path, f'{report_path}report.pdf')
 
@@ -264,11 +262,13 @@ def generate_report(data_name: str, target_variable: str):
     data_path = utils.get_processed_data_path(data_name)
     features_path = utils.get_features_path(data_name)
     model_path = utils.get_model_path(model_name)
+    out_of_sample_predictions_path = utils.get_out_of_sample_predictions_path(model_name)
     report_path = utils.get_report_path(model_name)
     report_resources_path = utils.get_report_resource_path(model_name)
 
     data, features = utils.load_data(data_path, features_path, target_variable)
     model = utils.load_model(model_path)
+    out_of_sample_predictions = pd.read_csv(out_of_sample_predictions_path)
 
     generate_report_util(model, data, features, target_variable, report_path, report_resources_path)
 

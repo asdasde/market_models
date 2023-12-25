@@ -161,6 +161,8 @@ def kFoldCrossValidation(k: int,
     log_losses = []
     accuracy_scores = []
 
+    out_of_sample_predictions = data[target_variable].copy(deep = True)
+
     kf = KFold(n_splits=k)
     fold_num = 0
     for train_ix, test_ix in kf.split(data):
@@ -171,6 +173,7 @@ def kFoldCrossValidation(k: int,
 
         dtest = makeDMatrix(test_data[features], test_data[target_variable], is_classification=is_classification)
         test_preds = model.predict(dtest)
+        out_of_sample_predictions.iloc[test_ix] = test_preds
 
         if is_classification:
             log_loss_value = log_loss(test_data[target_variable].values, test_preds)
@@ -212,7 +215,7 @@ def kFoldCrossValidation(k: int,
             print(
                 f"Mean Accuracy score over {k} fold Cross-validation is {round(mean_acc_score, 3)} ± {round(std_acc_score, 3)}.")
 
-        return mean_log_loss, mean_acc_score
+        return mean_log_loss, mean_acc_score, out_of_sample_predictions
 
     else:
         mMae, sMae = np.mean(maes), np.std(maes)
@@ -230,10 +233,9 @@ def kFoldCrossValidation(k: int,
             print(f"Mean RMSE over {k} fold Cross-validation is {rmRMse} ± {rsRMse}%.")
             print(f"Mean MAPE over {k} fold Cross-validation is {rmMape} ± {rsMape}%.")
 
-        return mMae, mRMse, mMape
+        return mMae, mRMse, mMape, out_of_sample_predictions
 
-def train_model_util(data: pd.DataFrame, features: list, target_variable: str, is_classification: bool, params: dict,
-                     model_output_path: str):
+def train_model_util(data: pd.DataFrame, features: list, target_variable: str, is_classification: bool):
     logging.info("Removed columns that are not used and nan values on target variable...")
     trials = Trials()
     def objective(space):
@@ -253,7 +255,7 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
     best_hyperparams = fmin(fn=objective,
                             space=space,
                             algo=tpe.suggest,
-                            max_evals=10,
+                            max_evals = utils.MAX_EVALS,
                             trials=trials,
                             return_argmin=False)
 
@@ -263,11 +265,7 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
     res = kFoldCrossValidation(k=3, data=data, features=features, target_variable=target_variable,
                                is_classification=is_classification, param=best_hyperparams, debug=True)
 
-    model.save_model(model_output_path)
-    logging.info(f"Saved model to {model_output_path}...")
-    return model
-
-
+    return model, best_hyperparams, res[-1]
 
 
 @click.command(name='train_model')
@@ -280,12 +278,21 @@ def train_model(data_name, target_variable):
     data_path = utils.get_processed_data_path(data_name)
     features_path = utils.get_features_path(data_name)
     model_path = utils.get_model_path(model_name)
+    hyperparameters_path = utils.get_model_hyperparameters_path(model_name)
+    out_of_sample_predictions_path = utils.get_model_cv_out_of_sample_predictions_path(model_name)
     report_path = utils.get_report_path(model_name)
     report_resources_path = utils.get_report_resource_path(model_name)
 
+    utils.prepareDir(utils.get_model_directory(model_name))
+
     data, features = utils.load_data(data_path, features_path, target_variable)
-    model = train_model_util(data, features, target_variable, False, DEFAULT_PARAMS_REGRESSION, model_path)
-    make_report.generate_report_util(model, data, features, target_variable, report_path, report_resources_path)
+    model, hyperparameters, out_of_sample_predictions = train_model_util(data, features, target_variable, False)
+
+    model.save_model(model_path)
+    utils.dict_to_json(hyperparameters, hyperparameters_path)
+    out_of_sample_predictions.to_csv(out_of_sample_predictions_path)
+
+    make_report.generate_report_util(model, data, features, target_variable, out_of_sample_predictions, report_path, report_resources_path)
 
 
 def get_feature_quartiles(data : pd.DataFrame):
