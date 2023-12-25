@@ -162,10 +162,9 @@ def sample_profiles(samples, params, others, policy_start_date, error_model):
             sample[feature] = sample[feature].astype(dtype)
 
         predictions = utils.predict(error_model, sample[profile_columns])
-        predictions = utils.apply_threshold(predictions, utils.ERROR_MODEL_CLASSIFICATION_THRESHOLD)
+        predictions = utils.apply_threshold(predictions, np.percentile(predictions, 85))
 
         sample = sample.loc[predictions]
-
         samples_list.append(sample)
 
         tot += len(sample)
@@ -174,6 +173,7 @@ def sample_profiles(samples, params, others, policy_start_date, error_model):
         logging.info(f"Generated {tot}/{samples // 3} profiles, in {cnt} tries")
 
     profiles = pd.concat(samples_list).iloc[ : samples // 3]
+    profiles['PolicyStartDate'] = policy_start_date
     profiles.index = range(len(profiles))
     return profiles
 
@@ -200,14 +200,6 @@ def load_distribution(service, params_v):
 
     return params, others
 
-
-def validate_error_model_name(ctx, param, value):
-    all_option = ctx.params.get('model_ensemble')
-    if not all_option and not value:
-        raise click.BadParameter('--error_model is required when --all_models is False.')
-    return value
-
-
 @click.command(name='sample_crawling_data')
 @click.option('--error_model_name', type = click.STRING)
 @click.option('--service', default='netrisk_casco', type=click.STRING, help = 'Currently only supports netrisk casco')
@@ -216,7 +208,8 @@ def validate_error_model_name(ctx, param, value):
 @click.option('--n', default=1000, type=click.INT, help='Number of profiles to sample.')
 def sample_crawling_data(error_model_name, service, params_v, policy_start_date, n):
 
-    error_model_path = utils.get_error_model_path(error_model_name)
+    error_model_path = utils.get_model_path(error_model_name)
+    print(error_model_path.split('/'))
     error_model = utils.load_model(error_model_path)
     logging.info("Loaded the error model.")
 
@@ -231,12 +224,60 @@ def sample_crawling_data(error_model_name, service, params_v, policy_start_date,
     logging.info(f"Exported sampled data to {sampled_data_path}")
 
 
+def replace_iii(row):
+    val = row['value']
+    try:
+        val = int(float(val))
+        row['value'] = val
+    except Exception as e:
+        pass
+    val = str(val)
+    row['tag'] = row['tag'].replace('iii', val)
+    return row
+def export_profile(profile, template, indicies, row_values, rows_to_not_use, EXPORT_PATH = None):
+    prof = template
+    for row, prof_col, expr in row_values:
+        prof.at[indicies[row], 'value'] = expr(profile[prof_col]) if prof_col is not None else expr(1)
+    for row in rows_to_not_use:
+        prof.at[indicies[row], 'Use'] = False
+    if EXPORT_PATH is not None:
+        prof = prof.apply(lambda row : replace_iii(row), axis = 1)
+        prof['id_case'] = profile.name
+        prof = prof.drop('Unnamed: 0', axis = 1, errors='ignore')
+        prof.to_csv(EXPORT_PATH + str(profile.name) + '.csv', index = False)
+    return prof
+
+
+@click.command(name = 'export_data_for_crawling')
+@click.option("--service", required=True, type=click.STRING, help = 'Service name (example netrisk_casco).')
+@click.option('--template_date', required=True, type=click.STRING, help='Date in the file name of the template')
+def export_data_for_crawling(service, template_date):
+
+    data_path = utils.get_interim_data_path("sampled_data")
+    template_path = utils.get_template_path(service, template_date)
+    row_values_path = utils.get_row_values_path(service, template_date)
+
+    if not os.path.exists(data_path):
+        logging.info("No sampled data, please generate it first ...")
+        logging.info("Aborting ...")
+        return
+
+    data = utils.read_file(data_path)
+    template = utils.read_file(template_path)
+    with open(row_values_path, 'r') as row_values:
+        row_values = eval(' '.join(row_values.readlines()))
+
+    indices = dict(zip(template['name'], template['id']))
+
+    print(export_profile(data.iloc[0], template, indices, row_values, []))
+
 @click.group()
 def cli():
     pass
 
 
 cli.add_command(sample_crawling_data)
+cli.add_command(export_data_for_crawling)
 
 if __name__ == '__main__':
     log_fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'

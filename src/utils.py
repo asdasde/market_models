@@ -70,7 +70,7 @@ def get_error_model_name(data_name : str, target_variable : str) -> str:
     return f'{data_name}_{target_variable}_error_model'
 
 def get_model_directory(model_name : str) -> str:
-    return f'{MODELS_PATH}/{model_name}/'
+    return f'{MODELS_PATH}{model_name}/'
 def get_model_path(model_name : str) -> str:
     model_dir = get_model_directory(model_name)
     return f'{model_dir}{model_name}.json'
@@ -88,6 +88,11 @@ def get_params_path(service : str, params_v : str) -> str:
 
 def get_others_path(service : str) -> str:
     return f'{DISTRIBUTION_PATH}{service}/other/'
+def get_template_path(service : str, date : str) -> str:
+    return f'{DISTRIBUTION_PATH}{service}/templates/{service}_template_{date}.xlsx'
+def get_row_values_path(service : str, date : str) -> str:
+    return f'{DISTRIBUTION_PATH}{service}/templates/{service}_row_values_{date}.txt'
+
 def get_encoder_path(feature : str) -> str:
     return f'{ENCODERS_PATH}{feature}_encoder.pkl'
 

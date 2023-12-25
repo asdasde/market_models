@@ -26,12 +26,9 @@ from hyperopt import STATUS_OK, Trials, fmin, hp, tpe
 
 from dotenv import find_dotenv, load_dotenv
 
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import utils
 import models.make_report as make_report
-
-
 
 TEST_SIZE = 0.1
 RANDOM_STATE = 42
@@ -108,7 +105,6 @@ def model_train(train_data: pd.DataFrame,
                 target_variable: str,
                 is_classification: bool,
                 param: dict = None) -> xgboost.Booster:
-
     param_ = None
     if param is None:
         if is_classification:
@@ -117,7 +113,6 @@ def model_train(train_data: pd.DataFrame,
             param_ = DEFAULT_PARAMS_REGRESSION.copy()
     else:
         param_ = param.copy()
-
 
     dtrain = makeDMatrix(train_data[features], train_data[target_variable], is_classification=is_classification)
     dtest = makeDMatrix(test_data[features], test_data[target_variable], is_classification=is_classification)
@@ -129,7 +124,7 @@ def model_train(train_data: pd.DataFrame,
 
     eval_list = [(dtrain, 'train'), (dtest, 'eval')]
 
-    return xgboost.train(param_, dtrain, num_boost_round = num_rounds, evals=eval_list, verbose_eval=False)
+    return xgboost.train(param_, dtrain, num_boost_round=num_rounds, evals=eval_list, verbose_eval=False)
 
 
 def merge_predictions(model: xgboost.Booster,
@@ -161,7 +156,7 @@ def kFoldCrossValidation(k: int,
     log_losses = []
     accuracy_scores = []
 
-    out_of_sample_predictions = data[target_variable].copy(deep = True)
+    out_of_sample_predictions = data[target_variable].copy(deep=True)
 
     kf = KFold(n_splits=k)
     fold_num = 0
@@ -235,9 +230,11 @@ def kFoldCrossValidation(k: int,
 
         return mMae, mRMse, mMape, out_of_sample_predictions
 
+
 def train_model_util(data: pd.DataFrame, features: list, target_variable: str, is_classification: bool):
     logging.info("Removed columns that are not used and nan values on target variable...")
     trials = Trials()
+
     def objective(space):
         params = space.copy()
         loss = kFoldCrossValidation(k=3, data=data, features=features, target_variable=target_variable,
@@ -255,7 +252,7 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
     best_hyperparams = fmin(fn=objective,
                             space=space,
                             algo=tpe.suggest,
-                            max_evals = utils.MAX_EVALS,
+                            max_evals=utils.MAX_EVALS,
                             trials=trials,
                             return_argmin=False)
 
@@ -268,11 +265,17 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
     return model, best_hyperparams, res[-1]
 
 
+def export_model(model: xgboost.Booster, hyperparameters: dict, out_of_sample_predictions: pd.Series, model_path: str,
+                 hyperparameters_path: str, out_of_sample_predictions_path: str) -> None:
+    model.save_model(model_path)
+    utils.dict_to_json(hyperparameters, hyperparameters_path)
+    out_of_sample_predictions.to_csv(out_of_sample_predictions_path)
+
+
 @click.command(name='train_model')
 @click.option('--data_name', required=True, type=click.STRING)
 @click.option('--target_variable', required=True, type=click.STRING)
 def train_model(data_name, target_variable):
-
     model_name = utils.get_model_name(data_name, target_variable)
 
     data_path = utils.get_processed_data_path(data_name)
@@ -288,23 +291,25 @@ def train_model(data_name, target_variable):
     data, features = utils.load_data(data_path, features_path, target_variable)
     model, hyperparameters, out_of_sample_predictions = train_model_util(data, features, target_variable, False)
 
-    model.save_model(model_path)
-    utils.dict_to_json(hyperparameters, hyperparameters_path)
-    out_of_sample_predictions.to_csv(out_of_sample_predictions_path)
+    export_model(model, hyperparameters, out_of_sample_predictions, model_path, hyperparameters_path,
+                 out_of_sample_predictions_path)
 
-    make_report.generate_report_util(model, data, features, target_variable, out_of_sample_predictions, report_path, report_resources_path)
+    make_report.generate_report_util(model, data, features, target_variable, out_of_sample_predictions, report_path,
+                                     report_resources_path)
 
 
-def get_feature_quartiles(data : pd.DataFrame):
+def get_feature_quartiles(data: pd.DataFrame):
     data_quartiles = data.copy()
     for column in data.columns:
         if pd.api.types.is_numeric_dtype(data[column]):
             if data[column].nunique() >= 4:
-                data_quartiles[column] = pd.qcut(data[column], q=[0, 0.25, 0.5, 0.75, 1], labels=False, duplicates = 'drop')
+                data_quartiles[column] = pd.qcut(data[column], q=[0, 0.25, 0.5, 0.75, 1], labels=False,
+                                                 duplicates='drop')
 
     return data_quartiles
 
-def evaluate_baseline_error_model(data : pd.DataFrame, features : list, target_variable : str):
+
+def evaluate_baseline_error_model(data: pd.DataFrame, features: list, target_variable: str):
     train_data, test_data = train_test_split(data, test_size=0.2, random_state=42)
     train_data[features] = get_feature_quartiles(train_data[features])
     test_data[features] = get_feature_quartiles(test_data[features])
@@ -312,8 +317,10 @@ def evaluate_baseline_error_model(data : pd.DataFrame, features : list, target_v
     baseline_error_model.fit(train_data[features].values, train_data[target_variable].values)
     baseline_error_model_preds = baseline_error_model.predict(test_data[features].values)
 
-    logging.info(f"Basline error models Log loss is {log_loss(test_data[target_variable], baseline_error_model_preds)}.")
-    logging.info(f"Basline error models Accuracy score is {accuracy_score(test_data[target_variable], baseline_error_model_preds)}.")
+    logging.info(
+        f"Basline error models Log loss is {log_loss(test_data[target_variable], baseline_error_model_preds)}.")
+    logging.info(
+        f"Basline error models Accuracy score is {accuracy_score(test_data[target_variable], baseline_error_model_preds)}.")
 
 
 @click.command(name='train_error_model')
@@ -321,22 +328,27 @@ def evaluate_baseline_error_model(data : pd.DataFrame, features : list, target_v
 @click.option('--target_variable', required=True, type=click.STRING)
 @click.option('--use_pretrained_model', required=False, type=click.BOOL, default=True, show_default=True)
 def train_error_model(data_name, target_variable, use_pretrained_model):
-
     model_name = utils.get_model_name(data_name, target_variable)
     error_model_name = utils.get_error_model_name(data_name, target_variable)
 
     data_path = utils.get_processed_data_path(data_name)
     features_path = utils.get_features_path(data_name)
     model_path = utils.get_model_path(model_name)
-    error_model_path = utils.get_error_model_path(error_model_name)
+    hyperparameters_path = utils.get_model_hyperparameters_path(error_model_name)
+    out_of_sample_predictions_path = utils.get_model_cv_out_of_sample_predictions_path(error_model_name)
+
+    error_model_path = utils.get_model_path(error_model_name)
+    error_model_hyperparameters_path = utils.get_model_hyperparameters_path(error_model_name)
+    error_model_out_of_sample_predictions_path = utils.get_model_cv_out_of_sample_predictions_path(error_model_name)
 
     data, features = utils.load_data(data_path, features_path, target_variable)
 
     if (use_pretrained_model and not os.path.exists(model_path)) or not use_pretrained_model:
-        train_model_util(data, features, target_variable, False, DEFAULT_PARAMS_REGRESSION, model_path)
+        model, hyperparameters, out_of_sample_predictions = train_model_util(data, features, target_variable, False)
+        export_model(model, hyperparameters, out_of_sample_predictions, model_path, hyperparameters_path,
+                     out_of_sample_predictions_path)
 
     model = utils.load_model(model_path)
-
     predictions = utils.predict(model, data[features])
     errors = data[target_variable] - predictions
     errors[np.abs(errors) < 1000] = 0
@@ -350,10 +362,14 @@ def train_error_model(data_name, target_variable, use_pretrained_model):
 
     evaluate_baseline_error_model(data, features, errors_feature)
 
-    train_model_util(data, features, errors_feature, True, DEFAULT_PARAMS_CLASSIFICATION, error_model_path)
+    error_model, error_model_hyperparameters, error_model_out_of_sample_predictions = train_model_util(data, features,
+                                                                                                       errors_feature,
+                                                                                                       True)
 
-
-
+    utils.prepareDir(utils.get_model_directory(error_model_name))
+    export_model(error_model, error_model_hyperparameters, error_model_out_of_sample_predictions, error_model_path,
+                 error_model_hyperparameters_path,
+                 error_model_out_of_sample_predictions_path)
 
 
 @click.group()
