@@ -11,6 +11,7 @@ from pathlib import Path
 import logging
 from PIL import Image
 
+from sklearn.metrics import mean_absolute_error, mean_squared_error, mean_absolute_percentage_error
 
 import os
 
@@ -47,6 +48,25 @@ def plot_feature_distribution(feature: pd.Series, report_resources_path: str) ->
     plt.close()
 
 
+def make_error_overview(acutal: pd.Series, predicted: pd.Series, report_resources_path: str) -> None:
+    mae = mean_absolute_error(acutal, predicted)
+    maeP = mae / acutal.mean() * 100
+    mse = mean_squared_error(acutal, predicted)
+    mseP = mse / acutal.mean() * 100
+    mape = mean_absolute_percentage_error(acutal, predicted)
+
+    report = pd.DataFrame(columns=['Mean Absolute Error', 'Mean Absolute Error as % of average target',
+                                   'Mean Squared Error', 'Mean absolute percentage error'],
+                          index=[0])
+    report['Mean Absolute Error'] = mae
+    report['Mean Absolute Error as % of average target'] = maeP
+    report['Mean Squared Error'] = mse
+    report['Mean absolute percentage error'] = mape
+
+    reportStyle = report.T.style.format(precision=2)
+    dfi.export(reportStyle, f'{report_resources_path}error_overview.jpg', dpi=200)
+
+
 def plot_hist_error_percentage(error: np.array, report_resources_path: str) -> None:
     plt.hist(error, range=[error.min() - 1, error.max() + 1], bins=40, weights=np.ones(len(error)) / len(error))
     plt.xlabel('Error percentage')
@@ -77,7 +97,7 @@ def make_error_quantiles(real: pd.Series, predicted: pd.Series, report_resources
 
 def partial_dependence_analysis(model: xgboost.Booster,
 
-  data: pd.DataFrame,
+                                data: pd.DataFrame,
                                 features: list,
                                 target_variable: str,
                                 grid_resolution: int = 100) -> tuple:
@@ -141,6 +161,7 @@ def plot_feature_importance(model: xgboost.Booster, importances: dict, report_re
     plot_pdp_importance(list(importances.keys()), list(importances.values()), save_path=f'{export_path}_pdp.jpg')
     plt.close()
 
+
 def plot_pdps(features: list, pdp_dict: dict, report_resources_path: str):
     for feature in features:
         feature_range, pdp_values = pdp_dict[feature]
@@ -176,7 +197,8 @@ def plot_real_vs_predicted_quantiles(real: pd.Series, predicted: pd.Series, repo
 
 
 def plot_real_vs_predicted_quantiles_by_feature(data: pd.DataFrame, predictions: pd.Series, feature: str,
-                                                target_variable: str, report_resources_path : str, num_quantiles : int = 20):
+                                                target_variable: str, report_resources_path: str,
+                                                num_quantiles: int = 20):
     data['quantiles'] = pd.qcut(data[feature], num_quantiles, labels=False, duplicates='drop')
     data['predicted'] = predictions
     quantile_values = data.groupby('quantiles')[feature].mean().values
@@ -196,7 +218,8 @@ def plot_real_vs_predicted_quantiles_by_feature(data: pd.DataFrame, predictions:
     plt.savefig(f'{report_resources_path}real_vs_predicted_quantiles_by_{feature}.jpg')
     plt.close()
 
-def make_pdf(reprot_resources_path : str, report_path : str):
+
+def make_pdf(reprot_resources_path: str, report_path: str):
     if not os.path.exists(reprot_resources_path):
         raise ValueError(f"Image directory does not exist: {reprot_resources_path}")
 
@@ -213,8 +236,11 @@ def make_pdf(reprot_resources_path : str, report_path : str):
     images = [Image.open(path) for path in image_paths]
 
     with open(report_path, "wb") as pdf_file:
-        images[0].save( pdf_file, "PDF", resolution=100.0, save_all=True, append_images=images[1:])
-def generate_report_util(model: xgboost.Booster, data: pd.DataFrame, features: list, target_variable: str, out_of_sample_predictions : pd.Series, report_path: str, report_resources_path: str):
+        images[0].save(pdf_file, "PDF", resolution=100.0, save_all=True, append_images=images[1:])
+
+
+def generate_report_util(model: xgboost.Booster, data: pd.DataFrame, features: list, target_variable: str,
+                         out_of_sample_predictions: pd.Series, report_path: str, report_resources_path: str):
     logging.info("Preparing directories for the report.")
     utils.prepareDir(report_path)
     utils.prepareDir(report_resources_path)
@@ -223,9 +249,12 @@ def generate_report_util(model: xgboost.Booster, data: pd.DataFrame, features: l
     make_data_overview(data, report_resources_path)
 
     real = data[target_variable]
-    #predictions = utils.predict(model, data[features])
+    # predictions = utils.predict(model, data[features])
     errors = real - out_of_sample_predictions
     errors_percentage = errors / data[target_variable] * 100
+    logging.info("Making error overview")
+
+    make_error_overview(real, out_of_sample_predictions, report_resources_path)
 
     logging.info("Making error quantiles.")
     make_error_quantiles(real, out_of_sample_predictions, report_resources_path)
@@ -247,34 +276,39 @@ def generate_report_util(model: xgboost.Booster, data: pd.DataFrame, features: l
 
     logging.info("Plotting real vs predicted quantiles by feature.")
     for feature in features:
-        plot_real_vs_predicted_quantiles_by_feature(data, out_of_sample_predictions, feature, target_variable, report_resources_path)
+        plot_real_vs_predicted_quantiles_by_feature(data, out_of_sample_predictions, feature, target_variable,
+                                                    report_resources_path)
 
     make_pdf(report_resources_path, f'{report_path}report.pdf')
 
     logging.info("Report generation completed.")
 
+
 @click.command("generate_report")
-@click.option("--data_name", required = True, type = click.STRING)
-@click.option("--target_variable", required = True, type = click.STRING)
+@click.option("--data_name", required=True, type=click.STRING)
+@click.option("--target_variable", required=True, type=click.STRING)
 def generate_report(data_name: str, target_variable: str):
     model_name = utils.get_model_name(data_name, target_variable)
 
     data_path = utils.get_processed_data_path(data_name)
     features_path = utils.get_features_path(data_name)
     model_path = utils.get_model_path(model_name)
-    out_of_sample_predictions_path = utils.get_out_of_sample_predictions_path(model_name)
+    out_of_sample_predictions_path = utils.get_model_cv_out_of_sample_predictions_path(model_name)
     report_path = utils.get_report_path(model_name)
     report_resources_path = utils.get_report_resource_path(model_name)
 
     data, features = utils.load_data(data_path, features_path, target_variable)
     model = utils.load_model(model_path)
-    out_of_sample_predictions = pd.read_csv(out_of_sample_predictions_path)
+    out_of_sample_predictions = pd.read_csv(out_of_sample_predictions_path)[target_variable]
 
-    generate_report_util(model, data, features, target_variable, report_path, report_resources_path)
+    generate_report_util(model, data, features, target_variable, out_of_sample_predictions, report_path,
+                         report_resources_path)
+
 
 @click.group()
 def cli():
     pass
+
 
 cli.add_command(generate_report)
 
@@ -289,4 +323,4 @@ if __name__ == '__main__':
     # load up the .env entries as environment variables
     load_dotenv(find_dotenv())
     cli()
-    #generate_report('netrisk_casco_2023_11_14__2023_11_20__2023_12_12', 'ALFA_price')
+    # generate_report('netrisk_casco_2023_11_14__2023_11_20__2023_12_12', 'ALFA_price')
