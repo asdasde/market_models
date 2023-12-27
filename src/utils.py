@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 import logging
 import joblib
+import zipfile
 
 
 from sklearn.preprocessing import LabelEncoder, OrdinalEncoder
@@ -19,8 +20,11 @@ PREDICTIONS_PATH = '../data/predictions/'
 MODELS_PATH = '../models/'
 ENCODERS_PATH = '../models/encoders/'
 REPORTS_PATH = '../reports/'
+PRIVATE_KEY_PATH = "../../../ssh_key"
 
 
+REMOTE_HOST_NAME = "43mp.l.time4vps.cloud"
+REMOTE_CRAWLER_DIRECTORY = "crawler-mocha/"
 def prepareDir(dir_path: str):
     if not os.path.exists(dir_path):
         os.mkdir(dir_path)
@@ -93,6 +97,9 @@ def get_template_path(service : str, date : str) -> str:
 def get_row_values_path(service : str, date : str) -> str:
     return f'{DISTRIBUTION_PATH}{service}/templates/{service}_row_values_{date}.txt'
 
+def get_private_key_file_path() -> str:
+    return '../../../ssh_key'
+
 def get_encoder_path(feature : str) -> str:
     return f'{ENCODERS_PATH}{feature}_encoder.pkl'
 
@@ -101,6 +108,28 @@ def get_report_path(model_name : str) -> str:
 
 def get_report_resource_path(model_name : str) -> str:
     return f'{REPORTS_PATH}{model_name}/resources/'
+
+def get_profiles_for_crawling_dir(service: str, version : str) -> str:
+    return f'{INTERIM_DATA_PATH}{service}_{version}/'
+def get_profiles_for_crawling_transposed(service: str, version : str) -> str:
+    dir = get_profiles_for_crawling_dir(service, version)
+    return f'{dir}{service}_{version}.csv'
+
+def get_profiles_for_crawling_zip_path(service: str, version : str) -> str:
+    dir = get_profiles_for_crawling_dir(service, version)
+    return f'{dir}{service}_{version}.zip'
+
+# Temoporary solution, because crawler needs to be run from its directory
+def get_remote_crawler_path() -> str:
+    return f'crawler.py'
+def get_remote_queue_path() -> str:
+    return f'{REMOTE_CRAWLER_DIRECTORY}queue/'
+
+def get_remote_profiles_path() -> str:
+    return f'{REMOTE_CRAWLER_DIRECTORY}profiles/'
+
+def get_remote_profiles_path() -> str:
+    return f'{REMOTE_CRAWLER_DIRECTORY}profiles'
 
 
 NAME_MAPPING = {
@@ -145,6 +174,11 @@ def read_file(file_path : str) -> pd.DataFrame:
     else:
         raise ValueError(f"Unsupported file format: {file_extension}")
 
+def zip_list_of_files(file_paths: list, zip_file_path: str) -> None:
+    with zipfile.ZipFile(zip_file_path, 'w') as zipMe:
+        for file in file_paths:
+            arcname = os.path.basename(file)
+            zipMe.write(file, arcname = arcname, compress_type=zipfile.ZIP_DEFLATED)
 
 def apply_features(data : pd.DataFrame, features : list, feature_dtypes : dict) -> pd.DataFrame:
     for feature in features:

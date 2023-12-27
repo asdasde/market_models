@@ -10,6 +10,7 @@ import numpy as np
 import re
 import random
 import datetime
+import paramiko
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import utils
 
@@ -219,7 +220,8 @@ def sample_crawling_data(error_model_name, service, params_v, policy_start_date,
     sampled_data = sample_profiles(n, params, others, policy_start_date, error_model)
 
     sampled_data_name = "sampled_data"
-    sampled_data_path = utils.get_interim_data_path(sampled_data_name)
+    utils.prepareDir(utils.get_profiles_for_crawling_dir("netrisk_casco", sampled_data_name))
+    sampled_data_path = utils.get_profiles_for_crawling_transposed("netrisk_casco", sampled_data_name)
     sampled_data.to_csv(sampled_data_path)
     logging.info(f"Exported sampled data to {sampled_data_path}")
 
@@ -234,26 +236,28 @@ def replace_iii(row):
     val = str(val)
     row['tag'] = row['tag'].replace('iii', val)
     return row
-def export_profile(profile, template, indicies, row_values, rows_to_not_use, EXPORT_PATH = None):
+
+def export_profile(profile : pd.DataFrame, template : pd.DataFrame, indicies : dict, row_values : list, rows_to_not_use : list, profiles_export_path : str = None):
     prof = template
     for row, prof_col, expr in row_values:
         prof.at[indicies[row], 'value'] = expr(profile[prof_col]) if prof_col is not None else expr(1)
     for row in rows_to_not_use:
         prof.at[indicies[row], 'Use'] = False
-    if EXPORT_PATH is not None:
+    if profiles_export_path is not None:
         prof = prof.apply(lambda row : replace_iii(row), axis = 1)
         prof['id_case'] = profile.name
         prof = prof.drop('Unnamed: 0', axis = 1, errors='ignore')
-        prof.to_csv(EXPORT_PATH + str(profile.name) + '.csv', index = False)
+        prof.to_csv(profiles_export_path + str(profile.name) + '.csv', index = False)
     return prof
 
 
 @click.command(name = 'export_data_for_crawling')
 @click.option("--service", required=True, type=click.STRING, help = 'Service name (example netrisk_casco).')
 @click.option('--template_date', required=True, type=click.STRING, help='Date in the file name of the template')
-def export_data_for_crawling(service, template_date):
-
-    data_path = utils.get_interim_data_path("sampled_data")
+def export_data_for_crawling(service: str, template_date : str):
+    profiles_export_path = utils.get_profiles_for_crawling_dir(service, "sampled_data") # promeniti u ID fajla
+    data_path = utils.get_profiles_for_crawling_transposed(service, "sampled_data") # promeniti u ID fajla
+    zip_path = utils.get_profiles_for_crawling_zip_path(service, "sampled_data")
     template_path = utils.get_template_path(service, template_date)
     row_values_path = utils.get_row_values_path(service, template_date)
 
@@ -269,7 +273,54 @@ def export_data_for_crawling(service, template_date):
 
     indices = dict(zip(template['name'], template['id']))
 
-    print(export_profile(data.iloc[0], template, indices, row_values, []))
+    files_list = []
+    for i in range(len(data)):
+        export_profile(data.iloc[i], template, indices, row_values, [], profiles_export_path)
+        files_list.append(f'{profiles_export_path}{i}.csv')
+
+
+    utils.zip_list_of_files(files_list, zip_path)
+    for file in files_list:
+        os.remove(file)
+
+    run_crawler_on_the_server(zip_path, "crawler-mocha/netirks_casco_sampled_data.zip", utils.get_remote_queue_path(), utils.get_remote_crawler_path())
+
+
+def run_crawler_on_the_server(local_zip_path, remote_zip_path, remote_unzip_path, remote_script_path):
+    try:
+        # Create an SSH client
+        ssh = paramiko.SSHClient()
+
+        # Load the private key for authentication
+        private_key = paramiko.RSAKey(filename = utils.PRIVATE_KEY_PATH)
+
+        # Automatically add the server's host key (this is insecure and should be avoided in production)
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+        # Connect to the server
+        ssh.connect(hostname = utils.REMOTE_HOST_NAME, username='root', pkey=private_key, allow_agent=True,
+                    look_for_keys=True)
+
+        # Upload the local zip file to the server
+        sftp = ssh.open_sftp()
+        sftp.put(local_zip_path, remote_zip_path)
+        sftp.close()
+
+        # Unzip the transferred zip file on the server
+        unzip_command = f"unzip -o {remote_zip_path} -d {remote_unzip_path}"
+        stdin, stdout, stderr = ssh.exec_command(unzip_command)
+        # Print the output of the unzip command (if any)
+        print(stdout.read().decode("utf-8"))
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+    finally:
+        # Close the SSH connection
+        ssh.close()
+
+
+# Example usage:
 
 @click.group()
 def cli():
