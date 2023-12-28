@@ -11,16 +11,19 @@ import re
 import random
 import datetime
 import paramiko
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import utils
 
 CURRENT_YEAR = datetime.datetime.now().year
+
 
 def range_to_list(x):
     n1, n2 = re.split(r'-|–', x)
     n1, n2 = int(n1), int(n2) + 1
 
     return list(range(n1, + n2))
+
 
 def get_from_range(x):
     l = []
@@ -98,8 +101,6 @@ def sample_profiles(samples, params, others, policy_start_date, error_model):
     tot = 0
     cnt = 0
 
-
-
     samples *= 3
     while tot < samples / 3:
 
@@ -110,7 +111,6 @@ def sample_profiles(samples, params, others, policy_start_date, error_model):
         sample['isRecent'] = True
 
         sample['LicenseAge'] = 18
-
 
         sample['PostalCode'] = sample_univariate(params['postal_code_params']['cat'].values,
                                                  params['postal_code_params']['prob'].values, num_samples=samples)
@@ -147,9 +147,8 @@ def sample_profiles(samples, params, others, policy_start_date, error_model):
                           left_on='PostalCode', right_on='postal_code', how='left').rename(
             columns={'latitude': 'Latitude', 'longitude': 'Longitude'})
 
-
-
-        sample = pd.merge(sample, others['aegon_postal_categories'], left_on = 'PostalCode', right_on = 'PostalCode', how = 'left')
+        sample = pd.merge(sample, others['aegon_postal_categories'], left_on='PostalCode', right_on='PostalCode',
+                          how='left')
         sample['Category'] = sample['Category'].fillna(8)
 
         sample['PostalCode2'] = sample['PostalCode'].apply(lambda x: str(x)[: 2])
@@ -173,7 +172,7 @@ def sample_profiles(samples, params, others, policy_start_date, error_model):
 
         logging.info(f"Generated {tot}/{samples // 3} profiles, in {cnt} tries")
 
-    profiles = pd.concat(samples_list).iloc[ : samples // 3]
+    profiles = pd.concat(samples_list).iloc[: samples // 3]
     profiles['PolicyStartDate'] = policy_start_date
     profiles.index = range(len(profiles))
     return profiles
@@ -201,14 +200,14 @@ def load_distribution(service, params_v):
 
     return params, others
 
+
 @click.command(name='sample_crawling_data')
-@click.option('--error_model_name', type = click.STRING)
-@click.option('--service', default='netrisk_casco', type=click.STRING, help = 'Currently only supports netrisk casco')
-@click.option('--params_v', default='v1', type=click.STRING, help = 'Use it to switch between versions of distributions.')
+@click.option('--error_model_name', type=click.STRING)
+@click.option('--service', default='netrisk_casco', type=click.STRING, help='Currently only supports netrisk casco')
+@click.option('--params_v', default='v1', type=click.STRING, help='Use it to switch between versions of distributions.')
 @click.option('--policy_start_date', default=None, type=click.STRING, help='Should be in YYYY_MM_DD format.')
 @click.option('--n', default=1000, type=click.INT, help='Number of profiles to sample.')
 def sample_crawling_data(error_model_name, service, params_v, policy_start_date, n):
-
     error_model_path = utils.get_model_path(error_model_name)
     print(error_model_path.split('/'))
     error_model = utils.load_model(error_model_path)
@@ -237,26 +236,28 @@ def replace_iii(row):
     row['tag'] = row['tag'].replace('iii', val)
     return row
 
-def export_profile(profile : pd.DataFrame, template : pd.DataFrame, indicies : dict, row_values : list, rows_to_not_use : list, profiles_export_path : str = None):
+
+def export_profile(profile: pd.DataFrame, template: pd.DataFrame, indicies: dict, row_values: list,
+                   rows_to_not_use: list, profiles_export_path: str = None):
     prof = template
     for row, prof_col, expr in row_values:
         prof.at[indicies[row], 'value'] = expr(profile[prof_col]) if prof_col is not None else expr(1)
     for row in rows_to_not_use:
         prof.at[indicies[row], 'Use'] = False
     if profiles_export_path is not None:
-        prof = prof.apply(lambda row : replace_iii(row), axis = 1)
+        prof = prof.apply(lambda row: replace_iii(row), axis=1)
         prof['id_case'] = profile.name
-        prof = prof.drop('Unnamed: 0', axis = 1, errors='ignore')
-        prof.to_csv(profiles_export_path + str(profile.name) + '.csv', index = False)
+        prof = prof.drop('Unnamed: 0', axis=1, errors='ignore')
+        prof.to_csv(profiles_export_path + str(profile.name) + '.csv', index=False)
     return prof
 
 
-@click.command(name = 'export_data_for_crawling')
-@click.option("--service", required=True, type=click.STRING, help = 'Service name (example netrisk_casco).')
+@click.command(name='export_data_for_crawling')
+@click.option("--service", required=True, type=click.STRING, help='Service name (example netrisk_casco).')
 @click.option('--template_date', required=True, type=click.STRING, help='Date in the file name of the template')
-def export_data_for_crawling(service: str, template_date : str):
-    profiles_export_path = utils.get_profiles_for_crawling_dir(service, "sampled_data") # promeniti u ID fajla
-    data_path = utils.get_profiles_for_crawling_transposed(service, "sampled_data") # promeniti u ID fajla
+def export_data_for_crawling(service: str, template_date: str):
+    profiles_export_path = utils.get_profiles_for_crawling_dir(service, "sampled_data")  # promeniti u ID fajla
+    data_path = utils.get_profiles_for_crawling_transposed(service, "sampled_data")  # promeniti u ID fajla
     zip_path = utils.get_profiles_for_crawling_zip_path(service, "sampled_data")
     template_path = utils.get_template_path(service, template_date)
     row_values_path = utils.get_row_values_path(service, template_date)
@@ -278,49 +279,66 @@ def export_data_for_crawling(service: str, template_date : str):
         export_profile(data.iloc[i], template, indices, row_values, [], profiles_export_path)
         files_list.append(f'{profiles_export_path}{i}.csv')
 
-
     utils.zip_list_of_files(files_list, zip_path)
     for file in files_list:
         os.remove(file)
 
-    run_crawler_on_the_server(zip_path, "crawler-mocha/netirks_casco_sampled_data.zip", utils.get_remote_queue_path(), utils.get_remote_crawler_path())
+    send_profiles_to_the_server(zip_path, "crawler-mocha/netirks_casco_sampled_data.zip", utils.get_remote_queue_path(),
+                                utils.get_remote_crawler_path())
 
 
-def run_crawler_on_the_server(local_zip_path, remote_zip_path, remote_unzip_path, remote_script_path):
+def send_profiles_to_the_server(local_zip_path, remote_zip_path, remote_unzip_path, remote_script_path):
     try:
-        # Create an SSH client
         ssh = paramiko.SSHClient()
-
-        # Load the private key for authentication
-        private_key = paramiko.RSAKey(filename = utils.PRIVATE_KEY_PATH)
-
-        # Automatically add the server's host key (this is insecure and should be avoided in production)
+        private_key = paramiko.RSAKey(filename=utils.PRIVATE_KEY_PATH)
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
-        # Connect to the server
-        ssh.connect(hostname = utils.REMOTE_HOST_NAME, username='root', pkey=private_key, allow_agent=True,
+        ssh.connect(hostname=utils.REMOTE_HOST_NAME, username='root', pkey=private_key, allow_agent=True,
                     look_for_keys=True)
 
-        # Upload the local zip file to the server
         sftp = ssh.open_sftp()
         sftp.put(local_zip_path, remote_zip_path)
         sftp.close()
 
-        # Unzip the transferred zip file on the server
         unzip_command = f"unzip -o {remote_zip_path} -d {remote_unzip_path}"
         stdin, stdout, stderr = ssh.exec_command(unzip_command)
-        # Print the output of the unzip command (if any)
         print(stdout.read().decode("utf-8"))
 
     except Exception as e:
         print(f"An error occurred: {e}")
 
     finally:
-        # Close the SSH connection
         ssh.close()
 
 
-# Example usage:
+def zip_and_fetch_profiles_from_the_server(remote_profiles_path, remote_zip_path, local_zip_path):
+    try:
+        ssh = paramiko.SSHClient()
+        private_key = paramiko.RSAKey(filename=utils.PRIVATE_KEY_PATH)
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(hostname=utils.REMOTE_HOST_NAME, username='root', pkey=private_key, allow_agent=True,
+                    look_for_keys=True)
+
+        zip_command = f"zip -jr {remote_zip_path} {remote_profiles_path}/*"
+        stdin, stdout, stderr = ssh.exec_command(zip_command)
+        print(stdout.read().decode("utf-8"))
+
+        sftp = ssh.open_sftp()
+        sftp.get(remote_zip_path, local_zip_path)
+        sftp.close()
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+    finally:
+        ssh.close()
+
+
+@click.command(name="fetch_profiles")
+def fetch_profiles_from_the_server():
+    zip_and_fetch_profiles_from_the_server(utils.get_remote_profiles_path(),
+                                           utils.get_remote_profiles_after_crawling_zip_path("netrisk_casco"),
+                                           utils.get_profiles_after_crawling_zip_path("netrisk_casco", "sampled_data"))
+
 
 @click.group()
 def cli():
@@ -329,6 +347,7 @@ def cli():
 
 cli.add_command(sample_crawling_data)
 cli.add_command(export_data_for_crawling)
+cli.add_command(fetch_profiles_from_the_server)
 
 if __name__ == '__main__':
     log_fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -340,5 +359,4 @@ if __name__ == '__main__':
     # find .env automagically by walking up directories until it's found, then
     # load up the .env entries as environment variables
     load_dotenv(find_dotenv())
-
     cli()

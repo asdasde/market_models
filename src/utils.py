@@ -7,7 +7,7 @@ import logging
 import joblib
 import zipfile
 
-
+from datetime import datetime
 from sklearn.preprocessing import LabelEncoder, OrdinalEncoder
 import xgboost
 
@@ -118,6 +118,14 @@ def get_profiles_for_crawling_transposed(service: str, version : str) -> str:
 def get_profiles_for_crawling_zip_path(service: str, version : str) -> str:
     dir = get_profiles_for_crawling_dir(service, version)
     return f'{dir}{service}_{version}.zip'
+def get_remote_profiles_after_crawling_zip_path(service: str) -> str:
+    current_date = datetime.now().strftime("%Y_%m_%d")
+    return f'{REMOTE_CRAWLER_DIRECTORY}{service}_{current_date}.zip'
+
+def get_profiles_after_crawling_zip_path(service :str, version : str) -> str:
+    dir = get_profiles_for_crawling_dir(service, version)
+    current_date = datetime.now().strftime("%Y_%m_%d")
+    return f'{dir}{service}_{current_date}.zip'
 
 # Temoporary solution, because crawler needs to be run from its directory
 def get_remote_crawler_path() -> str:
