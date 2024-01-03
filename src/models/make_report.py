@@ -199,9 +199,17 @@ def plot_real_vs_predicted_quantiles(real: pd.Series, predicted: pd.Series, repo
 def plot_real_vs_predicted_quantiles_by_feature(data: pd.DataFrame, predictions: pd.Series, feature: str,
                                                 target_variable: str, report_resources_path: str,
                                                 num_quantiles: int = 20):
-    data['quantiles'] = pd.qcut(data[feature], num_quantiles, labels=False, duplicates='drop')
+
+    if data[feature].dtype == 'object':
+        data['quantiles'] = data[feature]
+        quantile_values = data[feature].unique()
+    else:
+        data['quantiles'] = pd.qcut(data[feature], num_quantiles, labels=False, duplicates='drop')
+        quantile_values = data.groupby('quantiles')[feature].mean().values
+
     data['predicted'] = predictions
-    quantile_values = data.groupby('quantiles')[feature].mean().values
+
+
 
     mean_values = data.groupby('quantiles').agg({
         target_variable: 'mean',
@@ -275,7 +283,7 @@ def generate_report_util(model: xgboost.Booster, data: pd.DataFrame, features: l
     plot_real_vs_predicted_quantiles(real, out_of_sample_predictions, report_resources_path)
 
     logging.info("Plotting real vs predicted quantiles by feature.")
-    for feature in features:
+    for feature in ['DateCrawled'] + features:
         plot_real_vs_predicted_quantiles_by_feature(data, out_of_sample_predictions, feature, target_variable,
                                                     report_resources_path)
 

@@ -97,6 +97,17 @@ def get_template_path(service : str, date : str) -> str:
 def get_row_values_path(service : str, date : str) -> str:
     return f'{DISTRIBUTION_PATH}{service}/templates/{service}_row_values_{date}.txt'
 
+def get_sampled_data_name(service : str) -> str:
+    return f"{service}_sampled_data"
+
+def get_incremental_data_name(service : str, base_profile_v : str, values_v : str) -> str:
+    return f"{service}_incremental_data_base_profile_{base_profile_v}_values_{values_v}"
+def get_incremental_base_profile_path(service : str, v : str) -> str:
+    return f'{DISTRIBUTION_PATH}{service}/incremental_params/base_profiles/base_profile_{v}.csv'
+
+def get_incremental_values_path(service : str, v : str) -> str:
+    return f'{DISTRIBUTION_PATH}{service}/incremental_params/values/values_{v}.csv'
+
 def get_private_key_file_path() -> str:
     return '../../../ssh_key'
 
@@ -109,21 +120,21 @@ def get_report_path(model_name : str) -> str:
 def get_report_resource_path(model_name : str) -> str:
     return f'{REPORTS_PATH}{model_name}/resources/'
 
-def get_profiles_for_crawling_dir(service: str, version : str) -> str:
-    return f'{INTERIM_DATA_PATH}{service}_{version}/'
-def get_profiles_for_crawling_transposed(service: str, version : str) -> str:
-    dir = get_profiles_for_crawling_dir(service, version)
-    return f'{dir}{service}_{version}.csv'
+def get_profiles_for_crawling_dir(data_name : str) -> str:
+    return f'{INTERIM_DATA_PATH}{data_name}/'
+def get_profiles_for_crawling_transposed(data_name : str) -> str:
+    dir = get_profiles_for_crawling_dir(data_name)
+    return f'{dir}{data_name}.csv'
 
-def get_profiles_for_crawling_zip_path(service: str, version : str) -> str:
-    dir = get_profiles_for_crawling_dir(service, version)
-    return f'{dir}{service}_{version}.zip'
+def get_profiles_for_crawling_zip_path(data_name) -> str:
+    dir = get_profiles_for_crawling_dir(data_name)
+    return f'{dir}{data_name}.zip'
 def get_remote_profiles_after_crawling_zip_path(service: str) -> str:
     current_date = datetime.now().strftime("%Y_%m_%d")
     return f'{REMOTE_CRAWLER_DIRECTORY}{service}_{current_date}.zip'
 
-def get_profiles_after_crawling_zip_path(service :str, version : str) -> str:
-    dir = get_profiles_for_crawling_dir(service, version)
+def get_profiles_after_crawling_zip_path(service : str, data_name : str) -> str:
+    dir = get_profiles_for_crawling_dir(data_name)
     current_date = datetime.now().strftime("%Y_%m_%d")
     return f'{dir}{service}_{current_date}.zip'
 
@@ -169,6 +180,8 @@ BONUS_MALUS_CLASSES_DICT = dict(zip(BONUS_MALUS_CLASSES_BAD, BONUS_MALUS_CLASSES
 FORINT_TO_EUR = 0.0026
 ERROR_MODEL_CLASSIFICATION_THRESHOLD = 0.8
 MAX_EVALS = 100
+
+CURRENT_YEAR = datetime.today().year
 
 QUANTILE_RANGE = [0, 0.01, 0.03, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.97, 0.99, 1]
 def read_file(file_path : str) -> pd.DataFrame:
@@ -238,12 +251,12 @@ def load_data(data_path : str, features_path : str, target_variable : str = None
     features = [feature for feature in features if '_postal_category' not in feature]
 
     if target_variable is None:
-        data = data[features]
+        data = data[['DateCrawled'] + features]
     else:
-        data = data[features + [target_variable]]
+        data = data[['DateCrawled'] + features + [target_variable]]
         data = data.dropna(subset=[target_variable])
 
-    print(data.head())
+    data['isRecent'] = data['DateCrawled'].apply(lambda x : x.split('_')[0] == '2024')
 
     return data, features
 
