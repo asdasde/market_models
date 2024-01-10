@@ -10,6 +10,8 @@ from dotenv import find_dotenv, load_dotenv
 from pathlib import Path
 import logging
 from PIL import Image
+from matplotlib.colors import Normalize
+
 
 from sklearn.metrics import mean_absolute_error, mean_squared_error, mean_absolute_percentage_error
 
@@ -68,7 +70,10 @@ def make_error_overview(acutal: pd.Series, predicted: pd.Series, report_resource
 
 
 def plot_hist_error_percentage(error: np.array, report_resources_path: str) -> None:
-    plt.hist(error, range=[error.min() - 1, error.max() + 1], bins=40, weights=np.ones(len(error)) / len(error))
+
+    delta = max(abs(error.quantile(0.1)), error.quantile(0.9))
+    hist_range = (-delta, delta)
+    plt.hist(error, range = hist_range, bins=40, weights=np.ones(len(error)) / len(error))
     plt.xlabel('Error percentage')
     plt.ylabel('Percent of errors')
     plt.savefig(f'{report_resources_path}hist_error_percentage.jpg')
@@ -196,6 +201,11 @@ def plot_real_vs_predicted_quantiles(real: pd.Series, predicted: pd.Series, repo
     plt.close()
 
 
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import mean_absolute_error
+
 def plot_real_vs_predicted_quantiles_by_feature(data: pd.DataFrame, predictions: pd.Series, feature: str,
                                                 target_variable: str, report_resources_path: str,
                                                 num_quantiles: int = 20):
@@ -207,28 +217,50 @@ def plot_real_vs_predicted_quantiles_by_feature(data: pd.DataFrame, predictions:
         data['quantiles'] = pd.qcut(data[feature], num_quantiles, labels=False, duplicates='drop')
         quantile_values = data.groupby('quantiles')[feature].mean().values
 
-    data['predicted'] = predictions
+    # Ensure index alignment
+    data['predicted'] = predictions.values
+    data['error'] = abs(data[target_variable].values - predictions.values) / data[target_variable].values * 100
+
+    print(feature)
 
     if all(isinstance(val, str) and len(val) == 10 and val[4] == '_' and val[7] == '_' for val in quantile_values):
         quantile_values = pd.to_datetime(quantile_values, format='%Y_%m_%d', errors='coerce')
     else:
-        quantile_values = pd.to_numeric(quantile_values, errors='coerce')
-
+        quantile_values = pd.to_numeric(quantile_values, errors='coerce').round(2)
 
     mean_values = data.groupby('quantiles').agg({
         target_variable: 'mean',
-        'predicted': 'mean'
+        'predicted': 'mean',
+        'error' : "mean"
     }).reset_index()
+    mean_values['error'] = mean_values['error'].round(decimals=2)
 
-    plt.figure(figsize=(12, 8))
-    sns.lineplot(x = quantile_values, y=mean_values[target_variable], label='Real Mean', marker='o')
-    sns.lineplot(x = quantile_values, y=mean_values['predicted'], label='Predicted Mean', marker='x')
+    if feature == 'CarMake' or feature == 'LicenseAge':
+        return
 
-    plt.title(f'Mean Real vs Predicted Values for Different Feature Ranges of {feature}')
-    plt.xlabel(feature)
-    plt.ylabel(f'Mean {target_variable}')
+    fig, axes = plt.subplots(nrows=2, figsize=(12, 10), gridspec_kw={'height_ratios': [3, 1]})
+
+    sns.lineplot(x=quantile_values, y=mean_values[target_variable], label='Real Mean', marker='o', ax=axes[0])
+    sns.lineplot(x=quantile_values, y=mean_values['predicted'], label='Predicted Mean', marker='x', ax=axes[0])
+
+    norm = Normalize(vmin=mean_values['error'].min(), vmax=mean_values['error'].max())
+    color_map = plt.colormaps.get_cmap('magma_r')
+
+    colors = color_map(norm(mean_values['error']))
+
+    sns.barplot(x=quantile_values, y=mean_values['error'], palette = colors, ax=axes[1])
+
+    axes[0].set_title(f'Mean Real vs Predicted Values for Different Feature Ranges of {feature}')
+    axes[0].set_xlabel(feature)
+    axes[0].set_ylabel(f'Mean {target_variable}')
+
+    axes[1].set_xlabel(feature)
+    axes[1].set_ylabel('Mean Absolute Error')
+    axes[1].set_xticklabels(quantile_values, rotation=45, ha='right')
+
     plt.savefig(f'{report_resources_path}real_vs_predicted_quantiles_by_{feature}.jpg')
     plt.close()
+
 
 
 def k_largest_errors(data : pd.DataFrame, errors : pd.Series, k : int, report_resources_path : str):
@@ -281,14 +313,14 @@ def generate_report_util(model: xgboost.Booster, data: pd.DataFrame, features: l
     logging.info("Ploting error percentage distribution.")
     plot_hist_error_percentage(errors_percentage, report_resources_path)
 
-    logging.info("Performing partial dependence analysis.")
-    pdp_dict, importance = partial_dependence_analysis(model, data, features, target_variable, grid_resolution=20)
+   # logging.info("Performing partial dependence analysis.")
+   # pdp_dict, importance = partial_dependence_analysis(model, data, features, target_variable, grid_resolution=20)
 
-    logging.info("Plotting feature importance.")
-    plot_feature_importance(model, importance, report_resources_path)
+    #logging.info("Plotting feature importance.")
+    #plot_feature_importance(model, importance, report_resources_path)
 
-    logging.info("Plotting partial dependence plots.")
-    plot_pdps(features, pdp_dict, report_resources_path)
+    #logging.info("Plotting partial dependence plots.")
+    #plot_pdps(features, pdp_dict, report_resources_path)
 
     logging.info("Plotting real vs predicted quantiles.")
     plot_real_vs_predicted_quantiles(real, out_of_sample_predictions, report_resources_path)
