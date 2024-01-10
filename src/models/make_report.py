@@ -209,6 +209,10 @@ def plot_real_vs_predicted_quantiles_by_feature(data: pd.DataFrame, predictions:
 
     data['predicted'] = predictions
 
+    if all(isinstance(val, str) and len(val) == 10 and val[4] == '_' and val[7] == '_' for val in quantile_values):
+        quantile_values = pd.to_datetime(quantile_values, format='%Y_%m_%d', errors='coerce')
+    else:
+        quantile_values = pd.to_numeric(quantile_values, errors='coerce')
 
 
     mean_values = data.groupby('quantiles').agg({
@@ -217,14 +221,21 @@ def plot_real_vs_predicted_quantiles_by_feature(data: pd.DataFrame, predictions:
     }).reset_index()
 
     plt.figure(figsize=(12, 8))
-    sns.lineplot(x=quantile_values, y=mean_values[target_variable], label='Real Mean', marker='o')
-    sns.lineplot(x=quantile_values, y=mean_values['predicted'], label='Predicted Mean', marker='x')
+    sns.lineplot(x = quantile_values, y=mean_values[target_variable], label='Real Mean', marker='o')
+    sns.lineplot(x = quantile_values, y=mean_values['predicted'], label='Predicted Mean', marker='x')
 
     plt.title(f'Mean Real vs Predicted Values for Different Feature Ranges of {feature}')
     plt.xlabel(feature)
     plt.ylabel(f'Mean {target_variable}')
     plt.savefig(f'{report_resources_path}real_vs_predicted_quantiles_by_{feature}.jpg')
     plt.close()
+
+
+def k_largest_errors(data : pd.DataFrame, errors : pd.Series, k : int, report_resources_path : str):
+
+    k_largest_errors = data.loc[abs(errors).sort_values().index[-k:].values.tolist()]
+    k_largest_errors_style = k_largest_errors.style.format(precision=2)
+    dfi.export(k_largest_errors_style, f'{report_resources_path}_{k}_largest_errors.jpg', dpi=200)
 
 
 def make_pdf(reprot_resources_path: str, report_path: str):
@@ -286,6 +297,8 @@ def generate_report_util(model: xgboost.Booster, data: pd.DataFrame, features: l
     for feature in ['DateCrawled'] + features:
         plot_real_vs_predicted_quantiles_by_feature(data, out_of_sample_predictions, feature, target_variable,
                                                     report_resources_path)
+
+    k_largest_errors(data, errors,10, report_resources_path)
 
     make_pdf(report_resources_path, f'{report_path}report.pdf')
 

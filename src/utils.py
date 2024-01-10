@@ -21,7 +21,8 @@ MODELS_PATH = '../models/'
 ENCODERS_PATH = '../models/encoders/'
 REPORTS_PATH = '../reports/'
 PRIVATE_KEY_PATH = "../../../ssh_key"
-
+REFERENCES_PATH = "../references/"
+BRACKETS_PATH = "../data/external/feature_brackets/"
 
 REMOTE_HOST_NAME = "43mp.l.time4vps.cloud"
 REMOTE_CRAWLER_DIRECTORY = "crawler-mocha/"
@@ -97,8 +98,9 @@ def get_template_path(service : str, date : str) -> str:
 def get_row_values_path(service : str, date : str) -> str:
     return f'{DISTRIBUTION_PATH}{service}/templates/{service}_row_values_{date}.txt'
 
-def get_sampled_data_name(service : str) -> str:
-    return f"{service}_sampled_data"
+def get_sampled_data_name(service : str, params_v : str) -> str:
+    current_date = datetime.now().strftime("%Y_%m_%d")
+    return f"{service}_sampled_data_{params_v}_{current_date}"
 
 def get_incremental_data_name(service : str, base_profile_v : str, values_v : str) -> str:
     return f"{service}_incremental_data_base_profile_{base_profile_v}_values_{values_v}"
@@ -147,9 +149,20 @@ def get_remote_queue_path() -> str:
 def get_remote_profiles_path() -> str:
     return f'{REMOTE_CRAWLER_DIRECTORY}profiles/'
 
-def get_remote_profiles_path() -> str:
+def get_remote_profioles_path() -> str:
     return f'{REMOTE_CRAWLER_DIRECTORY}profiles'
 
+def get_data_name_references_path():
+    return f'{REFERENCES_PATH}data_name_references.json'
+
+def get_feature_brackets_dir(target_variable):
+    return f'{BRACKETS_PATH}{target_variable}_brackets/'
+
+def get_brackets_path(target_variable, feature):
+    dir = get_feature_brackets_dir(target_variable)
+    if not os.path.exists(dir):
+        os.makedirs(dir)
+    return f'{dir}{target_variable}_{feature}_brackets.csv'
 
 NAME_MAPPING = {
     'Policy_Start_Bonus_Malus_Class': 'BonusMalus',
@@ -171,6 +184,9 @@ NETRISK_CASCO_DTYPES = {'isRecent' : 'bool', 'CarMake' : 'category', 'CarAge' : 
                        'Category' : 'int', 'Longitude': 'float', 'Latitude': 'float', 'Age' : 'int', 'LicenseAge' : 'int', 'BonusMalus' : 'category',
                        'BonusMalusCode' : 'category'}
 
+#FEATURES_TO_IGNORE = ['PostalCode2', 'PostalCode3']
+FEATURES_TO_IGNORE = []
+
 
 BONUS_MALUS_CLASSES_GOOD = ['B10', 'B09', 'B08', 'B07', 'B06', 'B05', 'B04', 'B03', 'B02', 'B01', 'A00', 'M01', 'M02', 'M03', 'M04']
 BONUS_MALUS_CLASSES_BAD = ['B10', 'B9', 'B8', 'B7', 'B6', 'B5', 'B4', 'B3', 'B2', 'B1', 'A0', 'M1', 'M2', 'M3', 'M4']
@@ -184,6 +200,15 @@ MAX_EVALS = 100
 CURRENT_YEAR = datetime.today().year
 
 QUANTILE_RANGE = [0, 0.01, 0.03, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.97, 0.99, 1]
+
+def get_all_models_trained_on(data_name : str) -> list:
+    model_names = []
+    for model_name in os.listdir(MODELS_PATH):
+        if data_name in model_name and '_error_model' not in model_name:
+            model_names.append(model_name)
+    return model_names
+
+
 def read_file(file_path : str) -> pd.DataFrame:
     file_extension = file_path.split('.')[-1].lower()
     if file_extension == 'csv':
@@ -217,8 +242,13 @@ def apply_features(data : pd.DataFrame, features : list, feature_dtypes : dict) 
             if feature_encoder.__class__.__name__ == 'OrdinalEncoder':
                 data[feature] = feature_encoder.transform(data[feature].values.reshape(-1, 1)).ravel()
             else:
-                data[feature] = feature_encoder.transform(data[feature])
 
+                def transform(x):
+                    try:
+                        return feature_encoder.transform(x)
+                    except ValueError:
+                        return 1
+                data[feature] = data[feature].apply(transform)
     return data
 
 def choose_postal_categories(data : pd.DataFrame, target_variable : str = None) -> pd.DataFrame:
@@ -249,14 +279,16 @@ def load_data(data_path : str, features_path : str, target_variable : str = None
     data = choose_postal_categories(data, target_variable)
 
     features = [feature for feature in features if '_postal_category' not in feature]
+    features = [feature for feature in features if feature not in FEATURES_TO_IGNORE]
+
+    columns = features
+    columns = (['DateCrawled'] if 'DateCrawled' in data.columns else []) + columns
 
     if target_variable is None:
-        data = data[['DateCrawled'] + features]
+        data = data[columns]
     else:
-        data = data[['DateCrawled'] + features + [target_variable]]
+        data = data[columns + [target_variable]]
         data = data.dropna(subset=[target_variable])
-
-    data['isRecent'] = data['DateCrawled'].apply(lambda x : x.split('_')[0] == '2024')
 
     return data, features
 

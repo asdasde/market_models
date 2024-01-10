@@ -21,12 +21,17 @@ def get_expected_features(model: xgboost.Booster):
     return getattr(model, "feature_names", [])
 
 
-def predict_all_models(data: pd.DataFrame):
+def predict_all_models(data: pd.DataFrame, train_data_name : str):
     compatible_models = {}
 
-    for model_path in glob.glob(os.path.join(utils.MODELS_PATH, "*.json")):
+    all_model_names = utils.get_all_models_trained_on(train_data_name)
+
+    for model_name in all_model_names:
+        model_path = os.path.join(utils.MODELS_PATH, model_name)
+        model_path = os.path.join(model_path, model_name + '.json')
+
         model = utils.load_model(model_path)
-        model_name = os.path.basename(model_path).replace(".json", "")
+
         if is_compatible(model, data):
             compatible_models[model_name] = model
 
@@ -47,13 +52,19 @@ def validate_model_name(ctx, param, value):
         raise click.BadParameter('--model_name is required when --all_models is False.')
     return value
 
+def validate_train_data_name(ctx, param, value):
+    all_option = ctx.params.get('all_models')
+    if all_option and not value:
+        raise click.BadParameter('--train_data_name is required when --all_models is True.')
+    return value
 
 @click.command(name="model_predict")
 @click.option("--data_name", required=True, type=click.STRING,
               help="Name of the processed data file (without file extension).")
 @click.option("--all_models", is_flag=True, help="Predict using all available compatible models.")
+@click.option("--train_data_name", callback = validate_train_data_name, help = "Name of the train data for the models")
 @click.option("--model_name", callback=validate_model_name, help="Name of the model to use for prediction.")
-def model_predict(data_name: str, all_models: bool, model_name: str):
+def model_predict(data_name: str, all_models: bool, train_data_name : str, model_name: str):
 
     data_path = utils.get_processed_data_path(data_name)
     features_path = utils.get_features_path(data_name)
@@ -62,7 +73,7 @@ def model_predict(data_name: str, all_models: bool, model_name: str):
     data, features = utils.load_data(data_path, features_path)
 
     if all_models:
-        predictions_all_models = predict_all_models(data)
+        predictions_all_models = predict_all_models(data, train_data_name)
         for model_name, predictions in predictions_all_models.items():
             data[model_name] = predictions
 

@@ -215,9 +215,9 @@ def make_variations_for_feature(base_profile : pd.Series, feature : str|tuple, v
                 profile[f] = v
             print()
         else:
-            print(feature, value)
             profile[feature] = value
         profiles.append(profile)
+
     return pd.DataFrame(profiles)
 def make_incremnetal_data_util(base_profile : pd.Series, value_set : pd.DataFrame) -> pd.DataFrame:
 
@@ -238,7 +238,8 @@ def make_incremnetal_data_util(base_profile : pd.Series, value_set : pd.DataFram
             step = int(row['step'])
             values = list(range(min_val, max_val, step))
 
-        profiles.append(make_variations_for_feature(base_profile, feature, values))
+        variations = make_variations_for_feature(base_profile, feature, values)
+        profiles.append(variations)
 
     return pd.concat(profiles)
 
@@ -298,7 +299,7 @@ def sample_crawling_data(error_model_name, service, params_v, policy_start_date,
 
     sampled_data = sample_profiles(n, params, others, policy_start_date, error_model)
 
-    sampled_data_name = utils.get_sampled_data_name(service)
+    sampled_data_name = utils.get_sampled_data_name(service, params_v)
     utils.prepareDir(utils.get_profiles_for_crawling_dir(sampled_data_name))
     sampled_data_path = utils.get_profiles_for_crawling_transposed(sampled_data_name)
     sampled_data.to_csv(sampled_data_path)
@@ -321,7 +322,10 @@ def export_profile(profile: pd.DataFrame, template: pd.DataFrame, indices: dict,
                    rows_to_not_use: list, profiles_export_path: str = None):
     prof = template
     for row, prof_col, expr in row_values:
-        prof.at[indices[row], 'value'] = expr(profile[prof_col]) if prof_col is not None else expr(1)
+        try:
+            prof.at[indices[row], 'value'] = expr(profile[prof_col]) if prof_col is not None else expr(1)
+        except Exception as e:
+            print(e, prof_col)
     for row in rows_to_not_use:
         prof.at[indices[row], 'Use'] = False
     if profiles_export_path is not None:
@@ -329,8 +333,6 @@ def export_profile(profile: pd.DataFrame, template: pd.DataFrame, indices: dict,
         prof['id_case'] = profile.name
         prof = prof.drop('Unnamed: 0', axis=1, errors='ignore')
         prof.to_csv(profiles_export_path + str(profile.name) + '.csv', index=False)
-    if profile['BonusMalus'] != 'B10':
-        print(profile.name)
     return prof
 
 

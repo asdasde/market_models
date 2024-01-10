@@ -16,7 +16,7 @@ from sklearn.metrics import (
     accuracy_score,
     log_loss,
 )
-from sklearn.model_selection import KFold, train_test_split
+from sklearn.model_selection import KFold, train_test_split, StratifiedKFold
 
 from mlxtend.classifier import OneRClassifier
 
@@ -143,6 +143,24 @@ def merge_predictions(model: xgboost.Booster,
     return output
 
 
+def create_stratified_cv_splits(data : pd.DataFrame, target_variable : str, k : int = 3, num_groups = 1000, seed : int = RANDOM_STATE):
+    skf = StratifiedKFold(n_splits = k, shuffle=True, random_state=seed)
+    grp = pd.qcut(data[target_variable], num_groups, labels=False, duplicates = 'drop')
+    target = grp
+
+    fold_nums = np.zeros(len(data))
+    for fold_no, (t, v) in enumerate(skf.split(target, target)):
+        fold_nums[v] = fold_no
+
+    cv_splits = []
+
+    for i in range(k):
+        test_indices = np.argwhere(fold_nums == i).flatten()
+        train_indices = list(set(range(len(data))) - set(test_indices))
+        cv_splits.append((train_indices, test_indices))
+
+    return cv_splits
+
 def kFoldCrossValidation(k: int,
                          data: pd.DataFrame,
                          features: list,
@@ -158,9 +176,9 @@ def kFoldCrossValidation(k: int,
 
     out_of_sample_predictions = data[target_variable].copy(deep=True)
 
-    kf = KFold(n_splits=k)
+    kf = create_stratified_cv_splits(data, target_variable, k = 3, num_groups = 20)
     fold_num = 0
-    for train_ix, test_ix in kf.split(data):
+    for train_ix, test_ix in kf:
         fold_num += 1
 
         train_data, test_data = data.iloc[train_ix], data.iloc[test_ix]
