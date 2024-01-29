@@ -176,7 +176,7 @@ def kFoldCrossValidation(k: int,
 
     out_of_sample_predictions = data[target_variable].copy(deep=True)
 
-    kf = create_stratified_cv_splits(data, target_variable, k = 3, num_groups = 20)
+    kf = create_stratified_cv_splits(data, target_variable, k = 3, num_groups = 10)
     fold_num = 0
     for train_ix, test_ix in kf:
         fold_num += 1
@@ -246,6 +246,7 @@ def kFoldCrossValidation(k: int,
             print(f"Mean RMSE over {k} fold Cross-validation is {rmRMse} ± {rsRMse}%.")
             print(f"Mean MAPE over {k} fold Cross-validation is {rmMape} ± {rsMape}%.")
 
+        print(len(out_of_sample_predictions), len(data))
         return mMae, mRMse, mMape, out_of_sample_predictions
 
 
@@ -351,9 +352,10 @@ def train_error_model(data_name, target_variable, use_pretrained_model):
 
     data_path = utils.get_processed_data_path(data_name)
     features_path = utils.get_features_path(data_name)
+
     model_path = utils.get_model_path(model_name)
-    hyperparameters_path = utils.get_model_hyperparameters_path(error_model_name)
-    out_of_sample_predictions_path = utils.get_model_cv_out_of_sample_predictions_path(error_model_name)
+    hyperparameters_path = utils.get_model_hyperparameters_path(model_name)
+    out_of_sample_predictions_path = utils.get_model_cv_out_of_sample_predictions_path(model_name)
 
     error_model_path = utils.get_model_path(error_model_name)
     error_model_hyperparameters_path = utils.get_model_hyperparameters_path(error_model_name)
@@ -362,6 +364,7 @@ def train_error_model(data_name, target_variable, use_pretrained_model):
     data, features = utils.load_data(data_path, features_path, target_variable)
 
     if (use_pretrained_model and not os.path.exists(model_path)) or not use_pretrained_model:
+        utils.prepareDir(utils.get_model_directory(model_name))
         model, hyperparameters, out_of_sample_predictions = train_model_util(data, features, target_variable, False)
         export_model(model, hyperparameters, out_of_sample_predictions, model_path, hyperparameters_path,
                      out_of_sample_predictions_path)

@@ -235,7 +235,7 @@ def plot_real_vs_predicted_quantiles_by_feature(data: pd.DataFrame, predictions:
     }).reset_index()
     mean_values['error'] = mean_values['error'].round(decimals=2)
 
-    if feature == 'CarMake' or feature == 'LicenseAge':
+    if feature == 'CarMake' or feature == 'LicenseAge' or data[feature].nunique() < 2:
         return
 
     fig, axes = plt.subplots(nrows=2, figsize=(12, 10), gridspec_kw={'height_ratios': [3, 1]})
@@ -255,7 +255,7 @@ def plot_real_vs_predicted_quantiles_by_feature(data: pd.DataFrame, predictions:
     axes[0].set_ylabel(f'Mean {target_variable}')
 
     axes[1].set_xlabel(feature)
-    axes[1].set_ylabel('Mean Absolute Error')
+    axes[1].set_ylabel('Mean Absolute Percentage Error')
     axes[1].set_xticklabels(quantile_values, rotation=45, ha='right')
 
     plt.savefig(f'{report_resources_path}real_vs_predicted_quantiles_by_{feature}.jpg')
@@ -313,14 +313,14 @@ def generate_report_util(model: xgboost.Booster, data: pd.DataFrame, features: l
     logging.info("Ploting error percentage distribution.")
     plot_hist_error_percentage(errors_percentage, report_resources_path)
 
-   # logging.info("Performing partial dependence analysis.")
-   # pdp_dict, importance = partial_dependence_analysis(model, data, features, target_variable, grid_resolution=20)
+    logging.info("Performing partial dependence analysis.")
+    pdp_dict, importance = partial_dependence_analysis(model, data, features, target_variable, grid_resolution=20)
 
-    #logging.info("Plotting feature importance.")
-    #plot_feature_importance(model, importance, report_resources_path)
+    logging.info("Plotting feature importance.")
+    plot_feature_importance(model, importance, report_resources_path)
 
-    #logging.info("Plotting partial dependence plots.")
-    #plot_pdps(features, pdp_dict, report_resources_path)
+    logging.info("Plotting partial dependence plots.")
+    plot_pdps(features, pdp_dict, report_resources_path)
 
     logging.info("Plotting real vs predicted quantiles.")
     plot_real_vs_predicted_quantiles(real, out_of_sample_predictions, report_resources_path)
