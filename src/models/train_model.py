@@ -1,13 +1,13 @@
 import os
 import sys
+import click
+
 from pathlib import Path
 from typing import Optional
-
-import click
-import logging
-
-import numpy as np
-import pandas as pd
+from dotenv import find_dotenv, load_dotenv
+from mlxtend.classifier import OneRClassifier
+from hyperopt import STATUS_OK, Trials, fmin, tpe
+from sklearn.model_selection import train_test_split, StratifiedKFold
 
 from sklearn.metrics import (
     mean_absolute_error,
@@ -15,88 +15,19 @@ from sklearn.metrics import (
     mean_squared_error,
     accuracy_score,
     log_loss,
+    f1_score as f_score,
 )
-from sklearn.model_selection import KFold, train_test_split, StratifiedKFold
 
-from mlxtend.classifier import OneRClassifier
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import xgboost
-
-from hyperopt import STATUS_OK, Trials, fmin, hp, tpe
-
-from dotenv import find_dotenv, load_dotenv
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import utils
 import models.make_report as make_report
 
-TEST_SIZE = 0.1
-RANDOM_STATE = 42
-
-DEFAULT_PARAMS_REGRESSION = {
-    'objective': 'reg:squarederror',
-    'booster': 'gbtree',
-    'eval_metric': 'mae',
-    'n_estimators': 100,
-    'eta': 0.3,
-    'max_depth': 6,
-    'subsample': 1.0,
-    'colsample_bytree': 1.0,
-    'num_boost_round': 100,
-    'early_stopping_rounds': None,
-    'seed': 42
-}
-
-DEFAULT_PARAMS_CLASSIFICATION = {
-    'objective': 'binary:logistic',  # for binary classification
-    'booster': 'gbtree',
-    'eval_metric': 'logloss',  # use log loss for classification
-    'n_estimators': 100,
-    'eta': 0.3,
-    'max_depth': 6,
-    'subsample': 1.0,
-    'colsample_bytree': 1.0,
-    'num_boost_round': 100,
-    'early_stopping_rounds': None,
-    'seed': 42
-}
-
-SPACE_REGRESSION = {
-    'learning_rate': hp.uniform('learning_rate', 0.01, 0.3),
-    'n_estimators': hp.choice('n_estimators', np.arange(100, 1300, 100, dtype=int)),
-    'max_depth': hp.choice('max_depth', np.arange(2, 11, dtype=int)),
-    'min_child_weight': hp.choice('min_child_weight', np.arange(1, 11, dtype=int)),
-    'subsample': hp.uniform('subsample', 0.5, 1),
-    'colsample_bytree': hp.uniform('colsample_bytree', 0.5, 1),
-    'gamma': hp.uniform('gamma', 0, 0.2),
-    'lambda': hp.uniform('lambda', 0, 1),
-    'reg_alpha': hp.uniform('reg_alpha', 40, 180),
-    'reg_lambda': hp.uniform('reg_lambda', 0, 1),
-    'seed': 0,
-}
-
-SPACE_CLASSIFICATION = {
-    'learning_rate': hp.uniform('learning_rate', 0.01, 0.3),
-    'n_estimators': hp.choice('n_estimators', np.arange(100, 1300, 100, dtype=int)),
-    'max_depth': hp.choice('max_depth', np.arange(2, 11, dtype=int)),
-    'min_child_weight': hp.choice('min_child_weight', np.arange(1, 11, dtype=int)),
-    'subsample': hp.uniform('subsample', 0.5, 1),
-    'colsample_bytree': hp.uniform('colsample_bytree', 0.5, 1),
-    'gamma': hp.uniform('gamma', 0, 0.2),
-    'lambda': hp.uniform('lambda', 0, 1),
-    'reg_alpha': hp.uniform('reg_alpha', 40, 180),
-    'reg_lambda': hp.uniform('reg_lambda', 0, 1),
-    'seed': 0,
-}
+from utilities.load_utils import *
+from utilities.files_utils import *
+from utilities.model_utils import *
+from utilities.model_constants import *
 
 
-def makeDMatrix(data_features: pd.DataFrame,
-                data_target: pd.DataFrame,
-                is_classification: bool) -> xgboost.DMatrix:
-    if is_classification:
-        return xgboost.DMatrix(data_features, label=data_target, enable_categorical=True)
-    else:
-        return xgboost.DMatrix(data_features, data_target, enable_categorical=True)
 
 
 def model_train(train_data: pd.DataFrame,
@@ -114,16 +45,13 @@ def model_train(train_data: pd.DataFrame,
     else:
         param_ = param.copy()
 
-    dtrain = makeDMatrix(train_data[features], train_data[target_variable], is_classification=is_classification)
-    dtest = makeDMatrix(test_data[features], test_data[target_variable], is_classification=is_classification)
-
+    dtrain = make_d_matrix(train_data[features], train_data[target_variable], is_classification=is_classification)
+    dtest = make_d_matrix(test_data[features], test_data[target_variable], is_classification=is_classification)
     num_rounds = param_['n_estimators']
     del param_['n_estimators']
     param_['max_depth'] = int(param_['max_depth'])
-    param_['eval_metric'] = 'logloss' if is_classification else 'mae'
-
+    param_['eval_metric'] = 'aucpr' if is_classification else 'mae'
     eval_list = [(dtrain, 'train'), (dtest, 'eval')]
-
     return xgboost.train(param_, dtrain, num_boost_round=num_rounds, evals=eval_list, verbose_eval=False)
 
 
@@ -135,7 +63,7 @@ def merge_predictions(model: xgboost.Booster,
     pred_target_variable = f'predicted_{target_variable}'
     output = test_data.copy()
 
-    dtest = makeDMatrix(test_data[features], test_data[target_variable], is_classification=is_classification)
+    dtest = make_d_matrix(test_data[features], test_data[target_variable], is_classification=is_classification)
     output[pred_target_variable] = model.predict(dtest)
 
     output['error'] = output[target_variable] - output[pred_target_variable]
@@ -143,23 +71,21 @@ def merge_predictions(model: xgboost.Booster,
     return output
 
 
-def create_stratified_cv_splits(data : pd.DataFrame, target_variable : str, k : int = 3, num_groups = 1000, seed : int = RANDOM_STATE):
-    skf = StratifiedKFold(n_splits = k, shuffle=True, random_state=seed)
-    grp = pd.qcut(data[target_variable], num_groups, labels=False, duplicates = 'drop')
-    target = grp
+def create_stratified_cv_splits(data: pd.DataFrame, target_variable: str, k: int = 3, num_groups=1000,
+                                seed: int = RANDOM_STATE) -> list:
+    grp = pd.qcut(data[target_variable], num_groups, labels=False, duplicates='drop')
+
+    skf = StratifiedKFold(n_splits=k, shuffle=True, random_state=seed)
 
     fold_nums = np.zeros(len(data))
-    for fold_no, (t, v) in enumerate(skf.split(target, target)):
-        fold_nums[v] = fold_no
 
-    cv_splits = []
+    for fold_no, (train_index, test_index) in enumerate(skf.split(X=data, y=grp)):
+        fold_nums[test_index] = fold_no
 
-    for i in range(k):
-        test_indices = np.argwhere(fold_nums == i).flatten()
-        train_indices = list(set(range(len(data))) - set(test_indices))
-        cv_splits.append((train_indices, test_indices))
+    cv_splits = [(np.where(fold_nums != i)[0], np.where(fold_nums == i)[0]) for i in range(k)]
 
     return cv_splits
+
 
 def kFoldCrossValidation(k: int,
                          data: pd.DataFrame,
@@ -172,27 +98,29 @@ def kFoldCrossValidation(k: int,
     mses = []
     mapes = []
     log_losses = []
-    accuracy_scores = []
+    f1_scores = []
 
-    out_of_sample_predictions = data[target_variable].copy(deep=True)
+    out_of_sample_predictions = pd.Series(index=data.index, dtype=float)
 
-    kf = create_stratified_cv_splits(data, target_variable, k = 3, num_groups = 10)
+    kf = create_stratified_cv_splits(data, target_variable, k=3, num_groups=10)
     fold_num = 0
     for train_ix, test_ix in kf:
         fold_num += 1
 
         train_data, test_data = data.iloc[train_ix], data.iloc[test_ix]
         model = model_train(train_data, test_data, features, target_variable, is_classification, param)
-
-        dtest = makeDMatrix(test_data[features], test_data[target_variable], is_classification=is_classification)
+        dtest = make_d_matrix(test_data[features], test_data[target_variable], is_classification=is_classification)
         test_preds = model.predict(dtest)
         out_of_sample_predictions.iloc[test_ix] = test_preds
 
         if is_classification:
+
             log_loss_value = log_loss(test_data[target_variable].values, test_preds)
-            acc_score = accuracy_score(test_data[target_variable], test_preds.astype(bool))
+            f1_score = f_score(test_data[target_variable], test_preds > 0.5)
+
             log_losses.append(log_loss_value)
-            accuracy_scores.append(acc_score)
+            f1_scores.append(f1_score)
+
         else:
             mae = mean_absolute_error(test_data[target_variable].values, test_preds)
             mse = mean_squared_error(test_data[target_variable].values, test_preds)
@@ -205,7 +133,7 @@ def kFoldCrossValidation(k: int,
             if is_classification:
                 print(f"Summary for fold {fold_num}")
                 print("Log Loss is {}.".format(round(log_loss_value, 3)))
-                print("Accuracy score is {}.".format(round(log_loss_value, 3)))
+                print("F1 score is {}.".format(round(f1_score, 3)))
                 print("-------------------------------------------------------------")
 
             else:
@@ -219,23 +147,23 @@ def kFoldCrossValidation(k: int,
     if is_classification:
         mean_log_loss = np.mean(log_losses)
         std_log_loss = np.std(log_losses)
-        mean_acc_score = np.mean(accuracy_scores)
-        std_acc_score = np.std(accuracy_scores)
+
+        mean_f1_score = np.mean(f1_scores)
+        std_f1_score = np.std(f1_scores)
 
         if debug:
             print(
                 f"Mean Log Loss over {k} fold Cross-validation is {round(mean_log_loss, 3)} ± {round(std_log_loss, 3)}.")
             print(
-                f"Mean Accuracy score over {k} fold Cross-validation is {round(mean_acc_score, 3)} ± {round(std_acc_score, 3)}.")
+                f"Mean F1-score score over {k} fold Cross-validation is {round(mean_f1_score, 3)} ± {round(std_f1_score, 3)}.")
 
-        return mean_log_loss, mean_acc_score, out_of_sample_predictions
+        return mean_log_loss, mean_f1_score, out_of_sample_predictions
 
     else:
         mMae, sMae = np.mean(maes), np.std(maes)
         mRMse, sRMse = np.mean(np.sqrt(mses)), np.std(np.sqrt(mses))
         mMape, sMape = np.mean(mapes), np.std(mapes)
         meanPrice = data[target_variable].mean()
-
         rmMae, rsMae = round(mMae, 2), round(sMae / mMae * 100, 3)
         rmRMse, rsRMse = round(mRMse, 2), round(sRMse / mRMse * 100, 2)
         rmMape, rsMape = round(mMape * 100, 2), round(sMape / mMape, 3)
@@ -258,8 +186,7 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
         params = space.copy()
         loss = kFoldCrossValidation(k=3, data=data, features=features, target_variable=target_variable,
                                     is_classification=is_classification, param=params, debug=False)
-        print(f'Loss is {loss[0]}')
-        return {"loss": loss[0], 'status': STATUS_OK}
+        return {"loss": loss[0 if is_classification else 2], 'status': STATUS_OK}
 
     logging.info("Starting hyper-parameter tuning...")
 
@@ -271,7 +198,7 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
     best_hyperparams = fmin(fn=objective,
                             space=space,
                             algo=tpe.suggest,
-                            max_evals=utils.MAX_EVALS,
+                            max_evals=100,
                             trials=trials,
                             return_argmin=False)
 
@@ -287,7 +214,7 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
 def export_model(model: xgboost.Booster, hyperparameters: dict, out_of_sample_predictions: pd.Series, model_path: str,
                  hyperparameters_path: str, out_of_sample_predictions_path: str) -> None:
     model.save_model(model_path)
-    utils.dict_to_json(hyperparameters, hyperparameters_path)
+    dict_to_json(hyperparameters, hyperparameters_path)
     out_of_sample_predictions.to_csv(out_of_sample_predictions_path)
 
 
@@ -295,19 +222,18 @@ def export_model(model: xgboost.Booster, hyperparameters: dict, out_of_sample_pr
 @click.option('--data_name', required=True, type=click.STRING)
 @click.option('--target_variable', required=True, type=click.STRING)
 def train_model(data_name, target_variable):
-    model_name = utils.get_model_name(data_name, target_variable)
+    model_name = get_model_name(data_name, target_variable)
 
-    data_path = utils.get_processed_data_path(data_name)
-    features_path = utils.get_features_path(data_name)
-    model_path = utils.get_model_path(model_name)
-    hyperparameters_path = utils.get_model_hyperparameters_path(model_name)
-    out_of_sample_predictions_path = utils.get_model_cv_out_of_sample_predictions_path(model_name)
-    report_path = utils.get_report_path(model_name)
-    report_resources_path = utils.get_report_resource_path(model_name)
+    data_path = get_processed_data_path(data_name)
+    features_path = get_features_path(data_name)
+    model_path = get_model_path(model_name)
+    hyperparameters_path = get_model_hyperparameters_path(model_name)
+    out_of_sample_predictions_path = get_model_cv_out_of_sample_predictions_path(model_name)
+    report_path = get_report_path(model_name)
+    report_resources_path = get_report_resource_path(model_name)
 
-    utils.prepareDir(utils.get_model_directory(model_name))
-
-    data, features = utils.load_data(data_path, features_path, target_variable)
+    prepare_dir(get_model_directory(model_name))
+    data, features = load_data(data_path, features_path, target_variable)
     model, hyperparameters, out_of_sample_predictions = train_model_util(data, features, target_variable, False)
 
     export_model(model, hyperparameters, out_of_sample_predictions, model_path, hyperparameters_path,
@@ -342,35 +268,63 @@ def evaluate_baseline_error_model(data: pd.DataFrame, features: list, target_var
         f"Basline error models Accuracy score is {accuracy_score(test_data[target_variable], baseline_error_model_preds)}.")
 
 
+@click.command(name='train_presence_model')
+@click.option('--data_name', required=True, type=click.STRING)
+@click.option('--target_variable', required=True, type=click.STRING)
+def train_market_presence_model(data_name, target_variable):
+    presence_model_name = get_presence_model_name(data_name, target_variable)
+
+    presence_model_path = get_model_path(presence_model_name)
+    presence_model_hyperparamters_path = get_model_hyperparameters_path(presence_model_name)
+    presence_model_out_of_sample_predictions_path = get_model_cv_out_of_sample_predictions_path(presence_model_name)
+
+    data_path = get_processed_data_path(data_name)
+    features_path = get_features_path(data_name)
+
+    data, features = load_data(data_path, features_path, target_variable, apply_feature_dtypes=True,
+                               drop_target_na=False)
+    data[f'{target_variable}_presence'] = ~data[target_variable].isna()
+    presence_model, presence_model_hyperparameters, presence_model_out_of_sample_predictions = train_model_util(data,
+                                                                                                                features,
+                                                                                                                f'{target_variable}_presence',
+                                                                                                                True)
+
+    prepare_dir(get_model_directory(presence_model_name))
+    export_model(presence_model, presence_model_hyperparameters, presence_model_out_of_sample_predictions,
+                 presence_model_path,
+                 presence_model_hyperparamters_path,
+                 presence_model_out_of_sample_predictions_path)
+
+
 @click.command(name='train_error_model')
 @click.option('--data_name', required=True, type=click.STRING)
 @click.option('--target_variable', required=True, type=click.STRING)
 @click.option('--use_pretrained_model', required=False, type=click.BOOL, default=True, show_default=True)
 def train_error_model(data_name, target_variable, use_pretrained_model):
-    model_name = utils.get_model_name(data_name, target_variable)
-    error_model_name = utils.get_error_model_name(data_name, target_variable)
+    model_name = get_model_name(data_name, target_variable)
+    error_model_name = get_error_model_name(data_name, target_variable)
 
-    data_path = utils.get_processed_data_path(data_name)
-    features_path = utils.get_features_path(data_name)
+    data_path = get_processed_data_path(data_name)
+    features_path = get_features_path(data_name)
 
-    model_path = utils.get_model_path(model_name)
-    hyperparameters_path = utils.get_model_hyperparameters_path(model_name)
-    out_of_sample_predictions_path = utils.get_model_cv_out_of_sample_predictions_path(model_name)
+    model_path = get_model_path(model_name)
+    hyperparameters_path = get_model_hyperparameters_path(model_name)
+    out_of_sample_predictions_path = get_model_cv_out_of_sample_predictions_path(model_name)
 
-    error_model_path = utils.get_model_path(error_model_name)
-    error_model_hyperparameters_path = utils.get_model_hyperparameters_path(error_model_name)
-    error_model_out_of_sample_predictions_path = utils.get_model_cv_out_of_sample_predictions_path(error_model_name)
+    error_model_path = get_model_path(error_model_name)
+    error_model_hyperparameters_path = get_model_hyperparameters_path(error_model_name)
+    error_model_out_of_sample_predictions_path = get_model_cv_out_of_sample_predictions_path(error_model_name)
 
-    data, features = utils.load_data(data_path, features_path, target_variable)
+    data, features = load_data(data_path, features_path, target_variable)
 
     if (use_pretrained_model and not os.path.exists(model_path)) or not use_pretrained_model:
-        utils.prepareDir(utils.get_model_directory(model_name))
+        prepare_dir(get_model_directory(model_name))
         model, hyperparameters, out_of_sample_predictions = train_model_util(data, features, target_variable, False)
         export_model(model, hyperparameters, out_of_sample_predictions, model_path, hyperparameters_path,
                      out_of_sample_predictions_path)
 
-    model = utils.load_model(model_path)
-    predictions = utils.predict(model, data[features])
+    model = load_model(model_path)
+    predictions = predict(model, data[features])
     errors = data[target_variable] - predictions
     errors[np.abs(errors) < 1000] = 0
     errors[np.abs(errors) > 1000] = 1
@@ -387,7 +341,7 @@ def train_error_model(data_name, target_variable, use_pretrained_model):
                                                                                                        errors_feature,
                                                                                                        True)
 
-    utils.prepareDir(utils.get_model_directory(error_model_name))
+    prepare_dir(get_model_directory(error_model_name))
     export_model(error_model, error_model_hyperparameters, error_model_out_of_sample_predictions, error_model_path,
                  error_model_hyperparameters_path,
                  error_model_out_of_sample_predictions_path)
@@ -400,6 +354,7 @@ def cli():
 
 cli.add_command(train_error_model)
 cli.add_command(train_model)
+cli.add_command(train_market_presence_model)
 
 if __name__ == '__main__':
     log_fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'

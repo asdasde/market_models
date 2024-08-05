@@ -1,50 +1,47 @@
-# predict_model.py
-import sys
 import os
-
+import sys
+import click
 import pandas as pd
-import xgboost
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import click
-import glob
-import utils
-import logging
+
 from pathlib import Path
 
-def is_compatible(model: xgboost.Booster, data: pd.DataFrame):
-    expected_features = get_expected_features(model)
-    return set(expected_features).issubset(data.columns)
+from utilities.load_utils import *
+from utilities.path_utils import *
+from utilities.model_utils import *
+from utilities.constants import DEFAULT_TARGET_VARIABLES
+
+def get_variable_from_model_name(model_name: str) -> str:
+    return '_'.join(model_name.split('_')[-3:-1])
 
 
-def get_expected_features(model: xgboost.Booster):
-    return getattr(model, "feature_names", [])
-
-
-def predict_all_models(data: pd.DataFrame, train_data_name : str):
-    compatible_models = {}
-
-    all_model_names = utils.get_all_models_trained_on(train_data_name)
-
-    for model_name in all_model_names:
-        model_path = os.path.join(utils.MODELS_PATH, model_name)
-        model_path = os.path.join(model_path, model_name + '.json')
-
-        model = utils.load_model(model_path)
-
-        if is_compatible(model, data):
-            compatible_models[model_name] = model
+def predict_all_models(data : pd.DataFrame, train_data_name : str, apply_presence_models : bool = False):
 
     predictions_all_models = {}
-    for model_name, model in compatible_models.items():
-        predictions = utils.predict(model, data)
+
+    for target_variable in DEFAULT_TARGET_VARIABLES:
+        model_name = get_model_name(train_data_name, target_variable)
+        presence_model_name = get_presence_model_name(train_data_name, target_variable)
+
+        model_path = get_model_path(model_name)
+        presence_model_path = get_model_path(presence_model_name)
+        model = load_model(model_path)
+
+        if (model is None) or (not is_compatible(model, data)):
+            print('skipped ', target_variable)
+            continue
+
+        expected_features = get_expected_features(model)
+        predictions = predict(model, data[expected_features])
+
+        presence_model = load_model(presence_model_path) if (apply_presence_models and os.path.exists(presence_model_path)) else None
+        if presence_model is not None:
+            presence_predictions = apply_threshold(predict(presence_model, data[expected_features]), 0.5)
+            predictions[~presence_predictions] = None
         predictions_all_models[model_name] = predictions
 
-        # Added logging for predictions
-        logging.info(f"Predictions for {model_name}: {predictions}")
-
     return predictions_all_models
-
 
 def validate_model_name(ctx, param, value):
     all_option = ctx.params.get('all_models')
@@ -66,31 +63,29 @@ def validate_train_data_name(ctx, param, value):
 @click.option("--model_name", callback=validate_model_name, help="Name of the model to use for prediction.")
 def model_predict(data_name: str, all_models: bool, train_data_name : str, model_name: str):
 
-    data_path = utils.get_processed_data_path(data_name)
-    features_path = utils.get_features_path(data_name)
-    model_path = utils.get_model_path(model_name)
+    data_path = get_processed_data_path(data_name)
+    features_path = get_features_path(data_name)
+    model_path = get_model_path(model_name)
 
-    data, features = utils.load_data(data_path, features_path)
-
+    data, features = load_data(data_path, features_path, )
     if all_models:
-        predictions_all_models = predict_all_models(data, train_data_name)
+        predictions_all_models = predict_all_models(data, train_data_name, apply_presence_models=True)
         for model_name, predictions in predictions_all_models.items():
             data[model_name] = predictions
 
-        # Added logging for exporting predictions
-        predictions_path = utils.get_predictions_all_path(data_name)
+        predictions_path = get_predictions_all_path(data_name)
         logging.info(f"Exported predictions to {predictions_path}.")
         data.to_csv(predictions_path)
     else:
         if not model_path:
             click.echo("Error: Please specify a model path.")
             return
-        model = utils.load_model(model_path)
+        model = load_model(model_path)
         if not is_compatible(model, data):
             click.echo("Error: Model and data are not compatible.")
             return
 
-        predictions = utils.predict(model, data)
+        predictions = predict(model, data)
         logging.info(f"Predictions for {model_name}: {predictions}")
 
 @click.group()

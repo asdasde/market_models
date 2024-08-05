@@ -1,22 +1,22 @@
-import shutil
-import sys
+
 import os
-import click
-import logging
-from pathlib import Path
-from dotenv import find_dotenv, load_dotenv
-import glob
-import pandas as pd
-import numpy as np
 import re
+import sys
+import click
+import shutil
 import random
-import datetime
 import paramiko
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import utils
 
-CURRENT_YEAR = datetime.datetime.now().year
+from pathlib import Path
+from dotenv import find_dotenv, load_dotenv
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from utilities.constants import *
+from utilities.model_utils import *
+from utilities.files_utils import *
+from utilities.load_utils import *
 
 
 def range_to_list(x):
@@ -73,6 +73,9 @@ def get_car_model(prof, cars):
     n2 = int(n2)
     kw_min, kw_max = min(n1, n2), max(n1, n2)
 
+    if prof['CarAge'] < 2:
+        prof['CarAge'] = 2
+
     subset = cars[(cars['car_make_year'] == CURRENT_YEAR - prof['CarAge']) &
                   (cars['car_make'] == prof['CarMake'].upper()) &
                   (cars['kw'].between(kw_min, kw_max))]
@@ -93,7 +96,7 @@ def bm(val):
 
 
 def sample_profiles(samples, params, others, policy_start_date, error_model):
-    profile_columns_dtypes = utils.NETRISK_CASCO_DTYPES
+    profile_columns_dtypes = NETRISK_CASCO_DTYPES
     profile_columns = list(profile_columns_dtypes.keys())
 
     logging.info("Started generating samples")
@@ -128,8 +131,9 @@ def sample_profiles(samples, params, others, policy_start_date, error_model):
         sample['CarMake'] = sample_univariate(params['car_make_params']['cat'].values,
                                               params['car_make_params']['prob'].values, num_samples=samples,
                                               is_car_make=True, range=False)
-
-        sample['CarAge'] = getCarAgeAlternative(samples)
+        sample['CarAge'] = sample_univariate(params['car_age_params']['cat'].values,
+                                             params['car_age_params']['prob'].values, num_samples=samples,
+                                             is_car_make=False, range=False)
 
         cars = others['netrisk_cars'][others['netrisk_cars']['car_make_year'] >= CURRENT_YEAR - sample['CarAge'].max()]
         cars = cars[cars['car_make'].isin(sample['CarMake'].apply(lambda x: x.upper()).unique().tolist())]
@@ -141,7 +145,7 @@ def sample_profiles(samples, params, others, policy_start_date, error_model):
 
         sample = sample[~(sample['kw'] == -1)]
 
-        sample['car_value'] = sample['car_value'] * utils.FORINT_TO_EUR
+        sample['car_value'] = sample['car_value'] * FORINT_TO_EUR
 
         sample = sample[sample['PostalCode'].isin(others['hungary_postal_codes']['postal_code'].tolist())]
         sample = pd.merge(sample, others['hungary_postal_codes'][['postal_code', 'latitude', 'longitude']],
@@ -159,13 +163,15 @@ def sample_profiles(samples, params, others, policy_start_date, error_model):
         sample = sample[~((sample['BonusMalus'] > 'B05') & (sample['BonusMalus'] < 'M01') & (sample['Age'] < 29))]
         sample['CarMakerCategory'] = 1
 
+        sample['DeductiblePercentage'] = 10
+        sample['DeductibleAmount'] = 1
 
         if error_model is not None:
             for feature, dtype in profile_columns_dtypes.items():
                 sample[feature] = sample[feature].astype(dtype)
 
-            predictions = utils.predict(error_model, sample[profile_columns])
-            predictions = utils.apply_threshold(predictions, np.percentile(predictions, 85))
+            predictions = predict(error_model, sample[profile_columns])
+            predictions = apply_threshold(predictions, np.percentile(predictions, 85))
             sample = sample.loc[predictions]
 
         samples_list.append(sample)
@@ -180,29 +186,8 @@ def sample_profiles(samples, params, others, policy_start_date, error_model):
     profiles.index = range(len(profiles))
     return profiles
 
-def load_distribution(service, params_v):
-    params_path = utils.get_params_path(service, params_v)
-    other_path = utils.get_others_path(service)
 
-    params = {}
-    for param_file in glob.glob(f'{params_path}*.csv'):
-        param = param_file.split('/')[-1].split('.')[0]
-        params[param] = pd.read_csv(param_file)
-
-    others = {}
-    for other_file in glob.glob(f'{other_path}*'):
-        other = other_file.split('/')[-1].split('.')[0]
-        ext = other_file.split('.')[-1]
-        if ext == 'csv':
-            others[other] = pd.read_csv(other_file)
-        elif ext == 'xlsx':
-            others[other] = pd.read_excel(other_file)
-        else:
-            others[other] = pd.read_table(other_file, header=None, usecols=[1])
-
-    return params, others
-
-def make_variations_for_feature(base_profile : pd.Series, feature : str|tuple, values : list|str) -> pd.DataFrame:
+def make_variations_for_feature(base_profile: pd.Series, feature: str | tuple, values: list | str) -> pd.DataFrame:
     profiles = []
     if isinstance(values, str):
         values = eval(values)
@@ -211,7 +196,7 @@ def make_variations_for_feature(base_profile : pd.Series, feature : str|tuple, v
         profile = base_profile.copy()
         if isinstance(feature, tuple):
             for f, v in zip(feature, value):
-                print(f, v, end = ', ')
+                print(f, v, end=', ')
                 profile[f] = v
             print()
         else:
@@ -219,14 +204,14 @@ def make_variations_for_feature(base_profile : pd.Series, feature : str|tuple, v
         profiles.append(profile)
 
     return pd.DataFrame(profiles)
-def make_incremnetal_data_util(base_profile : pd.Series, value_set : pd.DataFrame) -> pd.DataFrame:
 
+
+def make_incremnetal_data_util(base_profile: pd.Series, value_set: pd.DataFrame) -> pd.DataFrame:
     profiles = []
 
     for _, row in value_set.iterrows():
         feature = row['feature']
         values = row['values']
-
         feature = "".join([c for c in feature if c not in ['(', ')', "'", ' ']])
         feature = tuple(feature.split(','))
         if len(feature) == 1:
@@ -236,7 +221,7 @@ def make_incremnetal_data_util(base_profile : pd.Series, value_set : pd.DataFram
             min_val = int(row['min'])
             max_val = int(row['max'])
             step = int(row['step'])
-            values = list(range(min_val, max_val, step))
+            values = list(range(min_val, max_val + 1, step))
 
         variations = make_variations_for_feature(base_profile, feature, values)
         profiles.append(variations)
@@ -244,10 +229,9 @@ def make_incremnetal_data_util(base_profile : pd.Series, value_set : pd.DataFram
     return pd.concat(profiles)
 
 
-def load_incremental_profile_params(service : str, base_profile_v : str, values_v : str) -> tuple:
-
-    base_profile_path = utils.get_incremental_base_profile_path(service, base_profile_v)
-    values_path = utils.get_incremental_values_path(service, values_v)
+def load_incremental_profile_params(service: str, base_profile_v: str, values_v: str) -> tuple:
+    base_profile_path = get_incremental_base_profile_path(service, base_profile_v)
+    values_path = get_incremental_values_path(service, values_v)
 
     base_profile = pd.read_csv(base_profile_path)
     values = pd.read_csv(values_path)
@@ -255,24 +239,22 @@ def load_incremental_profile_params(service : str, base_profile_v : str, values_
     base_profile.columns = ['columns', 'data']
     base_profile.set_index('columns', inplace=True)
     return base_profile['data'], values
-    
-    
 
-@click.command(name = "generate_incremnetal_data")
+
+@click.command(name="generate_incremnetal_data")
 @click.option('--service', default='netrisk_casco', type=click.STRING, help='Currently only supports netrisk casco')
 @click.option('--base_profile_v', default='v1', type=click.STRING)
 @click.option('--values_v', default=None)
-def generate_incremnetal_data(service : str, base_profile_v : str, values_v : str) -> None:
-    
+def generate_incremnetal_data(service: str, base_profile_v: str, values_v: str) -> None:
     base_profile, values = load_incremental_profile_params(service, base_profile_v, values_v)
     incremnetal_data = make_incremnetal_data_util(base_profile, values)
 
-    incremnetal_data_name = utils.get_incremental_data_name(service, base_profile_v, values_v)
-    incremnetal_data_dir = utils.get_profiles_for_crawling_dir(incremnetal_data_name)
+    incremnetal_data_name = get_incremental_data_name(service, base_profile_v, values_v)
+    incremnetal_data_dir = get_profiles_for_crawling_dir(incremnetal_data_name)
 
-    utils.prepareDir(incremnetal_data_dir)
+    prepare_dir(incremnetal_data_dir)
 
-    incremnetal_data_path = utils.get_profiles_for_crawling_transposed(incremnetal_data_name)
+    incremnetal_data_path = get_profiles_for_crawling_transposed(incremnetal_data_name)
 
     incremnetal_data.to_csv(incremnetal_data_path)
     print(incremnetal_data.head())
@@ -284,14 +266,15 @@ def generate_incremnetal_data(service : str, base_profile_v : str, values_v : st
 @click.option('--service', default='netrisk_casco', type=click.STRING, help='Currently only supports netrisk casco')
 @click.option('--params_v', default='v1', type=click.STRING, help='Use it to switch between versions of distributions.')
 @click.option('--policy_start_date', default=None, type=click.STRING, help='Should be in YYYY_MM_DD format.')
+@click.option('--custom_name', default='', type=click.STRING,
+              help='Use this if you want to have no generic name, this will append to genric name.')
 @click.option('--n', default=1000, type=click.INT, help='Number of profiles to sample.')
-def sample_crawling_data(error_model_name, service, params_v, policy_start_date, n):
-
+def sample_crawling_data(error_model_name, service, params_v, policy_start_date, custom_name, n):
     if error_model_name is None:
         error_model = None
     else:
-        error_model_path = utils.get_model_path(error_model_name)
-        error_model = utils.load_model(error_model_path)
+        error_model_path = get_model_path(error_model_name)
+        error_model = load_model(error_model_path)
         logging.info("Loaded the error model.")
 
     params, others = load_distribution(service, params_v)
@@ -299,9 +282,9 @@ def sample_crawling_data(error_model_name, service, params_v, policy_start_date,
 
     sampled_data = sample_profiles(n, params, others, policy_start_date, error_model)
 
-    sampled_data_name = utils.get_sampled_data_name(service, params_v)
-    utils.prepareDir(utils.get_profiles_for_crawling_dir(sampled_data_name))
-    sampled_data_path = utils.get_profiles_for_crawling_transposed(sampled_data_name)
+    sampled_data_name = get_sampled_data_name(service, params_v) + custom_name
+    prepare_dir(get_profiles_for_crawling_dir(sampled_data_name))
+    sampled_data_path = get_profiles_for_crawling_transposed(sampled_data_name)
     sampled_data.to_csv(sampled_data_path)
     logging.info(f"Exported sampled data to {sampled_data_path}")
 
@@ -320,7 +303,8 @@ def replace_iii(row):
 
 def export_profile(profile: pd.DataFrame, template: pd.DataFrame, indices: dict, row_values: list,
                    rows_to_not_use: list, profiles_export_path: str = None):
-    prof = template
+    prof = template.copy()
+
     for row, prof_col, expr in row_values:
         try:
             prof.at[indices[row], 'value'] = expr(profile[prof_col]) if prof_col is not None else expr(1)
@@ -328,6 +312,10 @@ def export_profile(profile: pd.DataFrame, template: pd.DataFrame, indices: dict,
             print(e, prof_col)
     for row in rows_to_not_use:
         prof.at[indices[row], 'Use'] = False
+
+    if profile['CarAge'] == 0:
+        prof.at[indices['operator_since_year'], 'Use'] = False
+
     if profiles_export_path is not None:
         prof = prof.apply(lambda row: replace_iii(row), axis=1)
         prof['id_case'] = profile.name
@@ -337,25 +325,26 @@ def export_profile(profile: pd.DataFrame, template: pd.DataFrame, indices: dict,
 
 
 @click.command(name='export_data_for_crawling')
-@click.option("--service", required=True, type=click.STRING, help='Service name (example netrisk_casco).')
-@click.option("--data_name", required=True, type=click.STRING, help='Data name (example incremental_data_base_profile_v1_values_v2')
+@click.option("--service", default='netrisk_casco', required=True, type=click.STRING,
+              help='Service name (example netrisk_casco).')
+@click.option("--data_name", required=True, type=click.STRING,
+              help='Data name (example incremental_data_base_profile_v1_values_v2')
 @click.option('--template_date', required=True, type=click.STRING, help='Date in the file name of the template')
-def export_data_for_crawling(service: str, data_name : str, template_date: str):
+def export_data_for_crawling(service: str, data_name: str, template_date: str):
+    profiles_export_path = get_profiles_for_crawling_dir(data_name)
+    data_path = get_profiles_for_crawling_transposed(data_name)
 
-    profiles_export_path = utils.get_profiles_for_crawling_dir(data_name)
-    data_path = utils.get_profiles_for_crawling_transposed(data_name)
-
-    zip_path = utils.get_profiles_for_crawling_zip_path(data_name)
-    template_path = utils.get_template_path(service, template_date)
-    row_values_path = utils.get_row_values_path(service, template_date)
+    zip_path = get_profiles_for_crawling_zip_path(data_name)
+    template_path = get_template_path(service, template_date)
+    row_values_path = get_row_values_path(service, template_date)
 
     if not os.path.exists(data_path):
         logging.info("No sampled data, please generate it first ...")
         logging.info("Aborting ...")
         return
 
-    data = utils.read_file(data_path)
-    template = utils.read_file(template_path)
+    data = read_file(data_path)
+    template = read_file(template_path)
     with open(row_values_path, 'r') as row_values:
         row_values = eval(' '.join(row_values.readlines()))
 
@@ -368,32 +357,36 @@ def export_data_for_crawling(service: str, data_name : str, template_date: str):
             shutil.copy(f'{profiles_export_path}{i}.csv', f'../../crawler/queue/{i}.csv')
         files_list.append(f'{profiles_export_path}{i}.csv')
 
-    utils.zip_list_of_files(files_list, zip_path)
+    zip_list_of_files(files_list, zip_path)
     for file in files_list:
         os.remove(file)
 
-    send_profiles_to_the_server(zip_path, f"crawler-mocha/{data_name}.zip", utils.get_remote_queue_path(),
-                                utils.get_remote_crawler_path())
+    send_profiles_to_the_server(zip_path, f"crawler-mocha/{data_name}/{data_name}.zip", f"crawler-mocha/{data_name}/",
+                                get_remote_crawler_path())
 
 
-def send_profiles_to_the_server(local_zip_path, remote_zip_path, remote_unzip_path, remote_script_path):
+def send_profiles_to_the_server(local_zip_path, remote_zip_path, remote_unzip_path, remote_script_path=None):
     try:
         ssh = paramiko.SSHClient()
-        private_key = paramiko.RSAKey(filename=utils.PRIVATE_KEY_PATH)
+        private_key = paramiko.RSAKey(filename=PRIVATE_KEY_PATH)
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(hostname=utils.REMOTE_HOST_NAME, username='root', pkey=private_key, allow_agent=True,
+        ssh.connect(hostname=REMOTE_HOST_NAME, username='root', pkey=private_key, allow_agent=True,
                     look_for_keys=True)
+
+        make_dir_command = f"mkdir {remote_unzip_path}"
+        stdin, stdout, stderr = ssh.exec_command(make_dir_command)
+        print(stdout.read().decode("utf-8"))
 
         sftp = ssh.open_sftp()
         sftp.put(local_zip_path, remote_zip_path)
         sftp.close()
 
-        unzip_command = f"unzip -o {remote_zip_path} -d {remote_unzip_path}"
+        unzip_command = f"unzip -o {remote_zip_path} -d {remote_unzip_path} && rm {remote_zip_path}"
         stdin, stdout, stderr = ssh.exec_command(unzip_command)
         print(stdout.read().decode("utf-8"))
 
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"An error occurred: {e.with_traceback()}")
 
     finally:
         ssh.close()
@@ -402,9 +395,9 @@ def send_profiles_to_the_server(local_zip_path, remote_zip_path, remote_unzip_pa
 def zip_and_fetch_profiles_from_the_server(remote_profiles_path, remote_zip_path, local_zip_path):
     try:
         ssh = paramiko.SSHClient()
-        private_key = paramiko.RSAKey(filename=utils.PRIVATE_KEY_PATH)
+        private_key = paramiko.RSAKey(filename=PRIVATE_KEY_PATH)
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(hostname=utils.REMOTE_HOST_NAME, username='root', pkey=private_key, allow_agent=True,
+        ssh.connect(hostname=REMOTE_HOST_NAME, username='root', pkey=private_key, allow_agent=True,
                     look_for_keys=True)
 
         zip_command = f"zip -jr {remote_zip_path} {remote_profiles_path}/*"
@@ -423,14 +416,15 @@ def zip_and_fetch_profiles_from_the_server(remote_profiles_path, remote_zip_path
 
 
 @click.command(name="fetch_profiles")
-@click.option('--service', required=True, type = click.STRING)
-@click.option('--data_name', required=True, type = click.STRING)
-def fetch_profiles_from_the_server(service : str, data_name : str):
-
-    remote_profiles_path = utils.get_remote_profiles_path()
-    remote_zip_path = utils.get_remote_profiles_after_crawling_zip_path(service)
-    local_zip_path = utils.get_profiles_after_crawling_zip_path(service, data_name)
-
+@click.option('--service', default='netrisk_casco', required=True, type=click.STRING)
+@click.option('--data_name', required=True, type=click.STRING)
+def fetch_profiles_from_the_server(service: str, data_name: str):
+    remote_profiles_path = get_remote_profiles_path(data_name)
+    remote_zip_path = get_remote_profiles_after_crawling_zip_path(data_name)
+    local_zip_path = get_profiles_after_crawling_zip_path(data_name)
+    print(remote_profiles_path)
+    print(remote_zip_path)
+    print(local_zip_path)
     zip_and_fetch_profiles_from_the_server(remote_profiles_path, remote_zip_path, local_zip_path)
 
 
