@@ -337,7 +337,6 @@ def export_data_for_crawling(service: str, data_name: str, template_date: str):
     zip_path = get_profiles_for_crawling_zip_path(data_name)
     template_path = get_template_path(service, template_date)
     row_values_path = get_row_values_path(service, template_date)
-
     if not os.path.exists(data_path):
         logging.info("No sampled data, please generate it first ...")
         logging.info("Aborting ...")
