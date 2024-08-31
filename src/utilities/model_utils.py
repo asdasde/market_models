@@ -47,6 +47,9 @@ def make_d_matrix(data_features: pd.DataFrame,
 def predict(model: xgboost.Booster, data: pd.DataFrame):
     d_matrix = xgboost.DMatrix(data=data, enable_categorical=True)
     predictions = model.predict(d_matrix, output_margin=True)
+
+
+
     return predictions
 
 

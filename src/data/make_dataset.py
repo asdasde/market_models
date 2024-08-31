@@ -309,7 +309,7 @@ def export_profile(profile: pd.DataFrame, template: pd.DataFrame, indices: dict,
         try:
             prof.at[indices[row], 'value'] = expr(profile[prof_col]) if prof_col is not None else expr(1)
         except Exception as e:
-            print(e, prof_col)
+            pass
     for row in rows_to_not_use:
         prof.at[indices[row], 'Use'] = False
 
@@ -414,17 +414,81 @@ def zip_and_fetch_profiles_from_the_server(remote_profiles_path, remote_zip_path
         ssh.close()
 
 
+@click.command(name="run_crawler")
+@click.option('--num_processes', default=1, type=click.INT, help='Number of processes to start')
+@click.option('--remote_profiles_path', required=True, type=click.STRING, help='Location of the profiles on the server')
+def run_crawler_script_on_server(num_processes: int, remote_profiles_path: str):
+    try:
+        ssh = paramiko.SSHClient()
+        private_key = paramiko.RSAKey(filename=PRIVATE_KEY_PATH)
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(hostname=REMOTE_HOST_NAME, username='root', pkey=private_key, allow_agent=True, look_for_keys=True)
+
+        cd_command = f"cd {REMOTE_CRAWLER_DIRECTORY}"
+        crawl_command = f"./crawl.sh -n {num_processes} -d {remote_profiles_path}"
+        full_command = f"{cd_command} && {crawl_command}"
+
+        stdin, stdout, stderr = ssh.exec_command(full_command)
+        print(stdout.read().decode("utf-8"))
+
+    except Exception as e:
+        print(f"An error occurred while running the crawl script: {e}")
+
+    finally:
+        ssh.close()
+
+
 @click.command(name="fetch_profiles")
 @click.option('--service', default='netrisk_casco', required=True, type=click.STRING)
 @click.option('--data_name', required=True, type=click.STRING)
 def fetch_profiles_from_the_server(service: str, data_name: str):
-    remote_profiles_path = get_remote_profiles_path(data_name)
+    remote_profiles_path = get_remote_profiles_subdirectory_path(data_name)
     remote_zip_path = get_remote_profiles_after_crawling_zip_path(data_name)
     local_zip_path = get_profiles_after_crawling_zip_path(data_name)
     print(remote_profiles_path)
     print(remote_zip_path)
     print(local_zip_path)
     zip_and_fetch_profiles_from_the_server(remote_profiles_path, remote_zip_path, local_zip_path)
+
+
+
+@click.command(name="execute_all_crawling")
+@click.option('--service', default='netrisk_casco', type=click.STRING, help='Service name (e.g., netrisk_casco)')
+@click.option('--profile_type', type=click.Choice(['sampled', 'incremental']), required=True, help='Type of profiles to use')
+@click.option('--params_v', default='v1', type=click.STRING, help='Version of distribution parameters (in case of sampled profiles)')
+@click.option('--base_profile_v', default='v1', type=click.STRING,
+              help='Base profile version (for incremental profiles)')
+@click.option('--values_v', default=None, type=click.STRING, help='Values version (for incremental profiles)')
+
+@click.option('--policy_start_date', default=None, type=click.STRING, help='Policy start date in YYYY_MM_DD format')
+@click.option('--custom_name', default='', type=click.STRING, help='Custom name for the data')
+@click.option('--n', default=1000, type=click.INT, help='Number of profiles to sample (for sampled profiles)')
+@click.option('--template_date', required=True, type=click.STRING, help='Date in the template file name')
+@click.option('--num_processes', default=1, type=click.INT, help='Number of crawler processes to start')
+def execute_all_crawling(profile_type, service, params_v, policy_start_date, custom_name, n, template_date, num_processes,
+                     base_profile_v, values_v):
+    try:
+        click.echo(f"Step 1: Generating {profile_type} profiles...")
+        if profile_type == 'sampled':
+            sample_crawling_data.callback(None, service, params_v, policy_start_date, custom_name, n)
+            data_name = get_sampled_data_name(service, params_v) + custom_name
+        else:  # incremental
+            generate_incremnetal_data.callback(service, base_profile_v, values_v)
+            data_name = get_incremental_data_name(service, base_profile_v, values_v)
+
+        # Step 2: Export data for crawling
+        click.echo("Step 2: Exporting data for crawling...")
+        export_data_for_crawling.callback(service, data_name, template_date)
+
+        # Step 3: Run crawler on the server
+        click.echo("Step 3: Running crawler on the server...")
+        run_crawler_script_on_server.callback(num_processes, data_name)
+
+        click.echo("Full process completed successfully!")
+
+    except Exception as e:
+        click.echo(f"An error occurred during the process: {e}")
+
 
 
 @click.group()
@@ -436,6 +500,10 @@ cli.add_command(sample_crawling_data)
 cli.add_command(export_data_for_crawling)
 cli.add_command(fetch_profiles_from_the_server)
 cli.add_command(generate_incremnetal_data)
+cli.add_command(run_crawler_script_on_server)
+cli.add_command(execute_all_crawling)
+
+
 
 if __name__ == '__main__':
     log_fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'

@@ -146,12 +146,18 @@ def get_mtpl_default_values_path(target_variable):
 def get_remote_crawler_path() -> str:
     return f'crawler.py'
 
+def get_remote_cralw_sh_path() -> str:
+    return f'{REMOTE_CRAWLER_DIRECTORY}crawl.sh'
 
 def get_remote_queue_path() -> str:
     return f'{REMOTE_CRAWLER_DIRECTORY}queue/'
 
 
 def get_remote_profiles_path(data_name: str) -> str:
+    return f'{REMOTE_CRAWLER_DIRECTORY}{data_name}/'
+
+
+def get_remote_profiles_subdirectory_path(data_name: str) -> str:
     return f'{REMOTE_CRAWLER_DIRECTORY}{data_name}/profiles/'
 
 
