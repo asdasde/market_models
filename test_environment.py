@@ -17,6 +17,9 @@ def main():
         raise TypeError(
             "This project requires Python {}. Found: Python {}".format(
                 required_major, sys.version))
+
+
+
     else:
         print(">>> Development environment passes all tests!")
 
