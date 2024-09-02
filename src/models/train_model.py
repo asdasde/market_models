@@ -211,8 +211,8 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
     return model, best_hyperparams, res[-1]
 
 
-def export_model(model: xgboost.Booster, hyperparameters: dict, out_of_sample_predictions: pd.Series, model_path: str,
-                 hyperparameters_path: str, out_of_sample_predictions_path: str) -> None:
+def export_model(model: xgboost.Booster, hyperparameters: dict, out_of_sample_predictions: pd.Series, model_path: Path,
+                 hyperparameters_path: Path, out_of_sample_predictions_path: Path) -> None:
     model.save_model(model_path)
     dict_to_json(hyperparameters, hyperparameters_path)
     out_of_sample_predictions.to_csv(out_of_sample_predictions_path)

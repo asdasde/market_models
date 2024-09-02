@@ -1,4 +1,8 @@
+import warnings
 
+from sqlalchemy.testing.plugin.plugin_base import logging
+
+warnings.simplefilter(action='ignore', category=FutureWarning)
 import os
 import re
 import sys
@@ -196,9 +200,7 @@ def make_variations_for_feature(base_profile: pd.Series, feature: str | tuple, v
         profile = base_profile.copy()
         if isinstance(feature, tuple):
             for f, v in zip(feature, value):
-                print(f, v, end=', ')
                 profile[f] = v
-            print()
         else:
             profile[feature] = value
         profiles.append(profile)
@@ -248,26 +250,19 @@ def load_incremental_profile_params(service: str, base_profile_v: str, values_v:
 def generate_incremnetal_data(service: str, base_profile_v: str, values_v: str) -> None:
     base_profile, values = load_incremental_profile_params(service, base_profile_v, values_v)
     incremnetal_data = make_incremnetal_data_util(base_profile, values)
-
     incremnetal_data_name = get_incremental_data_name(service, base_profile_v, values_v)
     incremnetal_data_dir = get_profiles_for_crawling_dir(incremnetal_data_name)
-
     prepare_dir(incremnetal_data_dir)
-
     incremnetal_data_path = get_profiles_for_crawling_transposed(incremnetal_data_name)
-
-    incremnetal_data.to_csv(incremnetal_data_path)
-    print(incremnetal_data.head())
+    incremnetal_data.to_csv(Path(incremnetal_data_path))
     logging.info(f"Exported sampled data to {incremnetal_data_path}")
-
 
 @click.command(name='sample_crawling_data')
 @click.option('--error_model_name', type=click.STRING)
 @click.option('--service', default='netrisk_casco', type=click.STRING, help='Currently only supports netrisk casco')
 @click.option('--params_v', default='v1', type=click.STRING, help='Use it to switch between versions of distributions.')
 @click.option('--policy_start_date', default=None, type=click.STRING, help='Should be in YYYY_MM_DD format.')
-@click.option('--custom_name', default='', type=click.STRING,
-              help='Use this if you want to have no generic name, this will append to genric name.')
+@click.option('--custom_name', default='', type=click.STRING, help='Use this if you want to have no generic name, this will append to genric name.')
 @click.option('--n', default=1000, type=click.INT, help='Number of profiles to sample.')
 def sample_crawling_data(error_model_name, service, params_v, policy_start_date, custom_name, n):
     if error_model_name is None:
@@ -275,19 +270,15 @@ def sample_crawling_data(error_model_name, service, params_v, policy_start_date,
     else:
         error_model_path = get_model_path(error_model_name)
         error_model = load_model(error_model_path)
-        logging.info("Loaded the error model.")
-
+    logging.info("Loaded the error model.")
     params, others = load_distribution(service, params_v)
     logging.info("Loaded the distributions.")
-
     sampled_data = sample_profiles(n, params, others, policy_start_date, error_model)
-
     sampled_data_name = get_sampled_data_name(service, params_v) + custom_name
     prepare_dir(get_profiles_for_crawling_dir(sampled_data_name))
     sampled_data_path = get_profiles_for_crawling_transposed(sampled_data_name)
-    sampled_data.to_csv(sampled_data_path)
+    sampled_data.to_csv(Path(sampled_data_path))
     logging.info(f"Exported sampled data to {sampled_data_path}")
-
 
 def replace_iii(row):
     val = row['value']
@@ -300,11 +291,8 @@ def replace_iii(row):
     row['tag'] = row['tag'].replace('iii', val)
     return row
 
-
-def export_profile(profile: pd.DataFrame, template: pd.DataFrame, indices: dict, row_values: list,
-                   rows_to_not_use: list, profiles_export_path: str = None):
+def export_profile(profile: pd.DataFrame, template: pd.DataFrame, indices: dict, row_values: list, rows_to_not_use: list, profiles_export_path: Path = None):
     prof = template.copy()
-
     for row, prof_col, expr in row_values:
         try:
             prof.at[indices[row], 'value'] = expr(profile[prof_col]) if prof_col is not None else expr(1)
@@ -312,65 +300,52 @@ def export_profile(profile: pd.DataFrame, template: pd.DataFrame, indices: dict,
             pass
     for row in rows_to_not_use:
         prof.at[indices[row], 'Use'] = False
-
     if profile['CarAge'] == 0:
         prof.at[indices['operator_since_year'], 'Use'] = False
-
     if profiles_export_path is not None:
         prof = prof.apply(lambda row: replace_iii(row), axis=1)
         prof['id_case'] = profile.name
         prof = prof.drop('Unnamed: 0', axis=1, errors='ignore')
-        prof.to_csv(profiles_export_path + str(profile.name) + '.csv', index=False)
+        prof.to_csv(Path(profiles_export_path) / f"{profile.name}.csv", index=False)
     return prof
 
 
+
 @click.command(name='export_data_for_crawling')
-@click.option("--service", default='netrisk_casco', required=True, type=click.STRING,
-              help='Service name (example netrisk_casco).')
-@click.option("--data_name", required=True, type=click.STRING,
-              help='Data name (example incremental_data_base_profile_v1_values_v2')
+@click.option("--service", default='netrisk_casco', required=True, type=click.STRING, help='Service name (example netrisk_casco).')
+@click.option("--data_name", required=True, type=click.STRING, help='Data name (example incremental_data_base_profile_v1_values_v2')
 @click.option('--template_date', required=True, type=click.STRING, help='Date in the file name of the template')
 def export_data_for_crawling(service: str, data_name: str, template_date: str):
     profiles_export_path = get_profiles_for_crawling_dir(data_name)
     data_path = get_profiles_for_crawling_transposed(data_name)
-
     zip_path = get_profiles_for_crawling_zip_path(data_name)
     template_path = get_template_path(service, template_date)
     row_values_path = get_row_values_path(service, template_date)
-    if not os.path.exists(data_path):
+    if not data_path.exists():
         logging.info("No sampled data, please generate it first ...")
         logging.info("Aborting ...")
         return
-
     data = read_file(data_path)
     template = read_file(template_path)
     with open(row_values_path, 'r') as row_values:
         row_values = eval(' '.join(row_values.readlines()))
-
     indices = dict(zip(template['name'], template['id']))
-
     files_list = []
     for i in range(len(data)):
         export_profile(data.iloc[i], template, indices, row_values, [], profiles_export_path)
-        if i < 3:
-            shutil.copy(f'{profiles_export_path}{i}.csv', f'../../crawler/queue/{i}.csv')
-        files_list.append(f'{profiles_export_path}{i}.csv')
-
-    zip_list_of_files(files_list, zip_path)
+        files_list.append(profiles_export_path / f"{i}.csv")
+    zip_list_of_files(files_list, Path(zip_path))
     for file in files_list:
-        os.remove(file)
+        file.unlink()  # Use unlink() instead of os.remove
+    send_profiles_to_the_server(Path(zip_path), f"crawler-mocha/{data_name}/{data_name}.zip", f"crawler-mocha/{data_name}/", get_remote_crawler_path())
 
-    send_profiles_to_the_server(zip_path, f"crawler-mocha/{data_name}/{data_name}.zip", f"crawler-mocha/{data_name}/",
-                                get_remote_crawler_path())
-
-
-def send_profiles_to_the_server(local_zip_path, remote_zip_path, remote_unzip_path, remote_script_path=None):
+def send_profiles_to_the_server(local_zip_path: Path, remote_zip_path: str, remote_unzip_path: str, remote_script_path: Path = None):
     try:
         ssh = paramiko.SSHClient()
+
         private_key = paramiko.RSAKey(filename=PRIVATE_KEY_PATH)
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(hostname=REMOTE_HOST_NAME, username='root', pkey=private_key, allow_agent=True,
-                    look_for_keys=True)
+        ssh.connect(hostname=REMOTE_HOST_NAME, username='root', pkey=private_key, allow_agent=True, look_for_keys=True)
 
         make_dir_command = f"mkdir {remote_unzip_path}"
         stdin, stdout, stderr = ssh.exec_command(make_dir_command)
@@ -383,21 +358,18 @@ def send_profiles_to_the_server(local_zip_path, remote_zip_path, remote_unzip_pa
         unzip_command = f"unzip -o {remote_zip_path} -d {remote_unzip_path} && rm {remote_zip_path}"
         stdin, stdout, stderr = ssh.exec_command(unzip_command)
         print(stdout.read().decode("utf-8"))
-
     except Exception as e:
-        print(f"An error occurred: {e.with_traceback()}")
-
+        print(f"An error occurred: {e}")
     finally:
         ssh.close()
-
 
 def zip_and_fetch_profiles_from_the_server(remote_profiles_path, remote_zip_path, local_zip_path):
     try:
         ssh = paramiko.SSHClient()
+
         private_key = paramiko.RSAKey(filename=PRIVATE_KEY_PATH)
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(hostname=REMOTE_HOST_NAME, username='root', pkey=private_key, allow_agent=True,
-                    look_for_keys=True)
+        ssh.connect(hostname=REMOTE_HOST_NAME, username='root', pkey=private_key, allow_agent=True, look_for_keys=True)
 
         zip_command = f"zip -jr {remote_zip_path} {remote_profiles_path}/*"
         stdin, stdout, stderr = ssh.exec_command(zip_command)
@@ -406,13 +378,10 @@ def zip_and_fetch_profiles_from_the_server(remote_profiles_path, remote_zip_path
         sftp = ssh.open_sftp()
         sftp.get(remote_zip_path, local_zip_path)
         sftp.close()
-
     except Exception as e:
         print(f"An error occurred: {e}")
-
     finally:
         ssh.close()
-
 
 @click.command(name="run_crawler")
 @click.option('--num_processes', default=1, type=click.INT, help='Number of processes to start')
@@ -420,6 +389,7 @@ def zip_and_fetch_profiles_from_the_server(remote_profiles_path, remote_zip_path
 def run_crawler_script_on_server(num_processes: int, remote_profiles_path: str):
     try:
         ssh = paramiko.SSHClient()
+
         private_key = paramiko.RSAKey(filename=PRIVATE_KEY_PATH)
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(hostname=REMOTE_HOST_NAME, username='root', pkey=private_key, allow_agent=True, look_for_keys=True)
@@ -430,10 +400,8 @@ def run_crawler_script_on_server(num_processes: int, remote_profiles_path: str):
 
         stdin, stdout, stderr = ssh.exec_command(full_command)
         print(stdout.read().decode("utf-8"))
-
     except Exception as e:
         print(f"An error occurred while running the crawl script: {e}")
-
     finally:
         ssh.close()
 
@@ -456,39 +424,29 @@ def fetch_profiles_from_the_server(service: str, data_name: str):
 @click.option('--service', default='netrisk_casco', type=click.STRING, help='Service name (e.g., netrisk_casco)')
 @click.option('--profile_type', type=click.Choice(['sampled', 'incremental']), required=True, help='Type of profiles to use')
 @click.option('--params_v', default='v1', type=click.STRING, help='Version of distribution parameters (in case of sampled profiles)')
-@click.option('--base_profile_v', default='v1', type=click.STRING,
-              help='Base profile version (for incremental profiles)')
+@click.option('--base_profile_v', default='v1', type=click.STRING, help='Base profile version (for incremental profiles)')
 @click.option('--values_v', default=None, type=click.STRING, help='Values version (for incremental profiles)')
-
 @click.option('--policy_start_date', default=None, type=click.STRING, help='Policy start date in YYYY_MM_DD format')
 @click.option('--custom_name', default='', type=click.STRING, help='Custom name for the data')
 @click.option('--n', default=1000, type=click.INT, help='Number of profiles to sample (for sampled profiles)')
 @click.option('--template_date', required=True, type=click.STRING, help='Date in the template file name')
 @click.option('--num_processes', default=1, type=click.INT, help='Number of crawler processes to start')
-def execute_all_crawling(profile_type, service, params_v, policy_start_date, custom_name, n, template_date, num_processes,
-                     base_profile_v, values_v):
+def execute_all_crawling(profile_type, service, params_v, policy_start_date, custom_name, n, template_date, num_processes, base_profile_v, values_v):
     try:
-        click.echo(f"Step 1: Generating {profile_type} profiles...")
+        logging.info(f"Step 1: Generating {profile_type} profiles...")
         if profile_type == 'sampled':
             sample_crawling_data.callback(None, service, params_v, policy_start_date, custom_name, n)
             data_name = get_sampled_data_name(service, params_v) + custom_name
-        else:  # incremental
+        else:
             generate_incremnetal_data.callback(service, base_profile_v, values_v)
             data_name = get_incremental_data_name(service, base_profile_v, values_v)
-
-        # Step 2: Export data for crawling
-        click.echo("Step 2: Exporting data for crawling...")
+        logging.info("Step 2: Exporting data for crawling...")
         export_data_for_crawling.callback(service, data_name, template_date)
-
-        # Step 3: Run crawler on the server
-        click.echo("Step 3: Running crawler on the server...")
+        logging.info("Step 3: Running crawler on the server...")
         run_crawler_script_on_server.callback(num_processes, data_name)
-
-        click.echo("Full process completed successfully!")
-
+        logging.info("Full process completed successfully!")
     except Exception as e:
         click.echo(f"An error occurred during the process: {e}")
-
 
 
 @click.group()

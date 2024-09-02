@@ -4,14 +4,14 @@ import logging
 import xgboost
 
 import pandas as pd
-
+from pathlib import Path
 from typing import Tuple
 from utilities.path_utils import *
 from utilities.files_utils import read_file
 from utilities.constants import FEATURES_TO_IGNORE, BONUS_MALUS_CLASSES_DICT
 
 
-def load_lookups_table(lookups_table_path: str) -> pd.DataFrame:
+def load_lookups_table(lookups_table_path: Path) -> pd.DataFrame:
     lookups_table = pd.read_csv(lookups_table_path)
     lookups_table = lookups_table[lookups_table['title'].str.contains('territory', case=False)].drop_duplicates(
         subset=['value'])
@@ -20,7 +20,7 @@ def load_lookups_table(lookups_table_path: str) -> pd.DataFrame:
     return lookups_table
 
 
-def load_lookups_default_value(default_values_path: str):
+def load_lookups_default_value(default_values_path: Path):
     try:
         default_value = pd.read_csv(default_values_path)
         return default_value[default_value['key'] == 'territory'].iloc[0]['value']
@@ -99,7 +99,7 @@ def choose_postal_categories(data: pd.DataFrame, target_variable: str = None) ->
     return data
 
 
-def load_data(data_path: str, features_path: str, target_variable: str = None, apply_feature_dtypes: bool = True,
+def load_data(data_path: Path, features_path: Path, target_variable: str = None, apply_feature_dtypes: bool = True,
               drop_target_na=True) -> Tuple[pd.DataFrame, list]:
     data = read_file(data_path)
     logging.info("Imported data...")
@@ -135,17 +135,17 @@ def load_data(data_path: str, features_path: str, target_variable: str = None, a
     return data, features
 
 
-def load_model(model_path: str) -> xgboost.Booster:
+def load_model(model_path: Path) -> xgboost.Booster:
     try:
-        return xgboost.Booster(model_file=model_path)
+        return xgboost.Booster(model_file=str(model_path))
     except Exception:
         return None
 
 def load_params(service: str, params_v: str) -> dict[str, pd.DataFrame]:
     params_path = get_params_path(service, params_v)
     params = {}
-    for param_file in glob.glob(f'{params_path}*.csv'):
-        param = param_file.split('/')[-1].split('.')[0]
+    for param_file in params_path.glob('*.csv'):
+        param = param_file.stem
         params[param] = pd.read_csv(param_file)
     return params
 
@@ -153,11 +153,11 @@ def load_params(service: str, params_v: str) -> dict[str, pd.DataFrame]:
 def load_other(service: str) -> dict[str, pd.DataFrame]:
     others_path = get_others_path(service)
     others = {}
-    for other_file in glob.glob(f'{others_path}*'):
-        other = other_file.split('/')[-1].split('.')[0]
-        ext = other_file.split('.')[-1]
+    for other_file in others_path.glob('*'):
+        other = other_file.stem
+        ext = other_file.suffix[1:]
         if ext == 'csv':
-            others[other] = pd.read_csv(other_file)
+            others[other] = pd.read_csv(other_file, low_memory=False)
         elif ext == 'xlsx':
             others[other] = pd.read_excel(other_file)
         else:
