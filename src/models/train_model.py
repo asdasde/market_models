@@ -3,7 +3,7 @@ import sys
 import click
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 from dotenv import find_dotenv, load_dotenv
 from mlxtend.classifier import OneRClassifier
 from hyperopt import STATUS_OK, Trials, fmin, tpe
@@ -174,8 +174,9 @@ def kFoldCrossValidation(k: int,
             print(f"Mean RMSE over {k} fold Cross-validation is {rmRMse} ± {rsRMse}%.")
             print(f"Mean MAPE over {k} fold Cross-validation is {rmMape} ± {rsMape}%.")
 
-        print(len(out_of_sample_predictions), len(data))
         return mMae, mRMse, mMape, out_of_sample_predictions
+
+
 
 
 def train_model_util(data: pd.DataFrame, features: list, target_variable: str, is_classification: bool):
@@ -198,7 +199,7 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
     best_hyperparams = fmin(fn=objective,
                             space=space,
                             algo=tpe.suggest,
-                            max_evals=100,
+                            max_evals=MAX_EVALS,
                             trials=trials,
                             return_argmin=False)
 
@@ -209,6 +210,8 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
                                is_classification=is_classification, param=best_hyperparams, debug=True)
 
     return model, best_hyperparams, res[-1]
+
+
 
 
 def export_model(model: xgboost.Booster, hyperparameters: dict, out_of_sample_predictions: pd.Series, model_path: Path,
@@ -240,7 +243,7 @@ def train_model(data_name, target_variable):
                  out_of_sample_predictions_path)
 
     make_report.generate_report_util(model, data, features, target_variable, out_of_sample_predictions, report_path,
-                                     report_resources_path)
+                                     report_resources_path, skip_pdp = True)
 
 
 def get_feature_quartiles(data: pd.DataFrame):
@@ -323,8 +326,9 @@ def train_error_model(data_name, target_variable, use_pretrained_model):
         export_model(model, hyperparameters, out_of_sample_predictions, model_path, hyperparameters_path,
                      out_of_sample_predictions_path)
 
-    model = load_model(model_path)
-    predictions = predict(model, data[features])
+    out_of_sample_predictions_path = get_model_cv_out_of_sample_predictions_path(model_name)
+    predictions = load_out_of_sample_predictions(out_of_sample_predictions_path, target_variable)
+
     errors = data[target_variable] - predictions
     errors[np.abs(errors) < 1000] = 0
     errors[np.abs(errors) > 1000] = 1

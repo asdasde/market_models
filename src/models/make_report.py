@@ -1,10 +1,15 @@
+import math
 import os
 import sys
+from calendar import day_abbr
+
 import click
 import traceback
 
 import numpy as np
+import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
+from matplotlib.pyplot import xticks
 
 from matplotlib.ticker import PercentFormatter
 from dotenv import find_dotenv, load_dotenv
@@ -43,9 +48,11 @@ def make_data_overview(data: pd.DataFrame, report_resources_path: Path) -> None:
 
 def plot_feature_distribution(feature: pd.Series, report_resources_path: Path) -> None:
     plt.figure(figsize=(10, 6))
-    if feature.dtype == 'bool':
-        sns.countplot(x=feature)
+    if feature.dtype == 'bool' or feature.dtype == 'object':
+        sns.countplot(x=feature, stat = 'percent', width=0.3, order = feature.value_counts().index)
+        plt.xticks(rotation=90)
         plt.title(f'Distribution of {feature.name}')
+
     else:
         if feature.dtype == 'object':
             try:
@@ -174,20 +181,42 @@ def plot_pdp_importance(features: list, importances, title="Feature importance",
     return ax
 
 
+def plot_feature_importance_individual(importances_dict: dict, kind: str, export_path: Path) -> None:
+    # Convert dictionary to a pandas Series and prepare data
+    importances = pd.Series(importances_dict, name='feature_with_dummies').reset_index()
+    importances['feature'] = importances['index'].apply(lambda x: x.split('__')[0])
+    importance_summary = importances.groupby('feature')['feature_with_dummies'].sum()
+    importance_summary = importance_summary.sort_values(ascending=False)
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    sns.barplot(
+        x=importance_summary.values,
+        y=importance_summary.index,
+        hue = importance_summary.index,
+        palette='viridis',
+        ax=ax
+    )
+
+    # Customize the plot
+    ax.set_title(f"Feature Importance ({kind})", fontsize=14)
+    ax.set_xlabel("Importance", fontsize=12)
+    ax.set_ylabel("Feature", fontsize=12)
+    ax.grid(True, axis='x', linestyle='--', alpha=0.6)
+
+    # Save the plot
+    plt.tight_layout()
+    plt.savefig(export_path / f"06_feature_importance_{kind}.jpg", dpi=300)
+    plt.close()
+
 def plot_feature_importance(model: xgboost.Booster, importances: dict, report_resources_path: Path):
-    export_path = report_resources_path / "06_feature_importance"
-    xgboost.plot_importance(model, importance_type='weight', xlabel='weight')
-    plt.savefig(export_path.with_suffix('_weight.jpg'))
-    plt.close()
-    xgboost.plot_importance(model, importance_type='gain', xlabel='gain')
-    plt.savefig(export_path.with_suffix('_gain.jpg'))
-    plt.close()
-    xgboost.plot_importance(model, importance_type='cover', xlabel='cover')
-    plt.savefig(export_path.with_suffix('_cover.jpg'))
-    plt.close()
+    export_path = report_resources_path
+
+    for kind in ['weight', 'gain', 'cover']:
+        plot_feature_importance_individual(model.get_score(importance_type=kind), kind, export_path)
+
     if importances is not None:
         plot_pdp_importance(list(importances.keys()), list(importances.values()),
-                            save_path=export_path.with_suffix('_pdp.jpg'))
+                            save_path=export_path  / f"06_feature_importance_pdp.jpg")
 
 
 def plot_pdps(features: list, pdp_dict: dict, report_resources_path: Path):
@@ -222,104 +251,161 @@ def plot_real_vs_predicted_quantiles(real: pd.Series, predicted: pd.Series, repo
     plt.close()
 
 
-def plot_real_vs_predicted_quantiles_by_feature(data_p: pd.DataFrame, predictions: pd.Series, feature: str,
-                                                target_variable: str, report_resources_path: Path,
-                                                num_quantiles: int = 20):
-    data = data_p.copy()
-    data['predicted'] = predictions.values
-    data = data.dropna(subset=[feature, target_variable])
-    print(feature, data[feature].dtype)
-    if data[feature].dtype in ['object', 'category'] or data[feature].nunique() < num_quantiles:
-        data['quantiles'] = data[feature]
-        quantile_values = sorted(data[feature].unique())
+def get_mean_values(data, feature, target_variable, is_numeric : bool) -> pd.DataFrame:
+    mean_values = data.groupby('quantiles').agg(
+        **{f'mean_{target_variable}': (target_variable, 'mean')},
+        mean_predicted=('predicted', 'mean'),
+        mean_error=('error', 'mean'),
+        **{f'count_{feature}': (feature, 'count')},
+        **{f'min_{feature}': (feature, 'min')},
+        **{f'max_{feature}': (feature, 'max')}
+    ).dropna(subset=[f'mean_{target_variable}'])
+
+
+    if is_numeric:
+        mean_values[f'{feature}_range'] = mean_values.apply(
+            lambda row: f'({row[f"min_{feature}"]},{row[f"max_{feature}"]}]', axis=1
+        )
     else:
-        data['quantiles'] = pd.qcut(data[feature], num_quantiles, labels=False, duplicates='drop')
-        quantile_values = data.groupby('quantiles')[feature].mean().values
+        mean_values[f'{feature}_range'] = mean_values[f'min_{feature}']
 
-    data['error'] = abs(data[target_variable].values - data['predicted'].values) / data[target_variable].values * 100
+    mean_values = mean_values.drop([f'min_{feature}', f'max_{feature}'], axis=1)
 
-    if all(isinstance(val, str) and len(val) == 10 and val[4] == '_' and val[7] == '_' for val in quantile_values):
-        quantile_values = pd.to_datetime(quantile_values, format='%Y_%m_%d', errors='coerce')
-    elif isinstance(quantile_values[0], (np.bool_, bool)):
-        pass
-    else:
-        quantile_values = pd.to_numeric(quantile_values, errors='coerce').round(2)
+    return mean_values
 
-    mean_values = data.groupby('quantiles').agg({
-        target_variable: 'mean',
-        'predicted': 'mean',
-        'error': 'mean',
-        feature: 'count'
-    }).reset_index().dropna(subset=[target_variable])
 
-    mean_values['error'] = mean_values['error'].round(decimals=2).sort_index()
-
-    if feature == 'LicenseAge' or data[feature].nunique() < 2:
-        return
-
-    fig, axes = plt.subplots(nrows=3, figsize=(12, 15), gridspec_kw={'height_ratios': [3, 1, 1]})
-
-    sns.lineplot(x=quantile_values, y=mean_values[target_variable], label='Real Mean', marker='o', ax=axes[0])
-    sns.lineplot(x=quantile_values, y=mean_values['predicted'], label='Predicted Mean', marker='x', ax=axes[0])
-    try:
-        axes[0].set_xticks(np.round(np.linspace(quantile_values.min(), quantile_values.max(), 15)))
-    except Exception:
-        pass
-
-    sns.histplot(data=data, x=feature, bins=15, stat='percent', kde=False, color='blue', alpha=0.3, ax=axes[1])
-    axes[1].set_title(f'Distribution of {feature}')
-    axes[1].set_xlabel(feature)
-    axes[1].set_ylabel('Percentage of values')
-    axes[1].set_xticklabels(quantile_values, rotation=45, ha='right')
-
-    norm = plt.Normalize(vmin=mean_values['error'].min(), vmax=mean_values['error'].max())
-    color_map = plt.get_cmap('magma_r')
-    colors = color_map(norm(mean_values['error'])).tolist()
-
-    sns.barplot(x=quantile_values, y=mean_values['error'], palette=colors, ax=axes[2], hue=quantile_values, dodge=False,
-                legend=False)
-
+def configure_mean_vs_predicted_axes(axes, feature, ticks, target_variable, is_numeric : bool = False):
+    axes[0].set_xticks(ticks)
+    axes[0].set_xticklabels(ticks, rotation=90)
+    axes[0].grid(True, alpha=0.3)
     axes[0].set_title(f'Mean Real vs Predicted Values for Different Feature Ranges of {feature}')
     axes[0].set_xlabel('')
     axes[0].set_ylabel(f'Mean {target_variable}')
+    axes[1].set_xlabel(feature)
+    axes[1].set_ylabel('Mean Absolute Percentage Error')
+    axes[1].set_xticks(range(len(ticks)))
+    axes[1].set_xticklabels(ticks, rotation=90, ha='right')
+    axes[2].set_title(f'Distribution of {feature}')
     axes[2].set_xlabel(feature)
-    axes[2].set_ylabel('Mean Absolute Percentage Error')
-    axes[2].set_xticks(range(len(quantile_values)))
-    axes[2].set_xticklabels(quantile_values, rotation=45, ha='right')
+    axes[2].set_ylabel('Percentage of values')
+    if not is_numeric:
+        axes[2].set_xticks(range(len(ticks)))
+        axes[2].set_xticklabels(ticks, rotation=90)
+    plt.tight_layout()
+    return axes
+
+def plot_real_vs_predicted_by_feature_numeric(data: pd.DataFrame, feature: str,
+                                                target_variable: str, num_quantiles : int = 20) -> Tuple[plt.Figure, np.ndarray, pd.DataFrame]:
+
+
+    if data[feature].nunique() == 1:
+        return None, None, None
+
+    data['quantiles'] = pd.qcut(data[feature], num_quantiles, labels=False, duplicates='drop')
+    quantile_values = data.groupby('quantiles')[feature].mean().values.round(decimals=2)
+    mean_values = get_mean_values(data, feature, target_variable, is_numeric=True)
+
+    ticks = np.round(np.linspace(quantile_values.min(), quantile_values.max(), len(quantile_values)), 2)
+
+    norm = plt.Normalize(vmin=mean_values['mean_error'].min(), vmax=mean_values['mean_error'].max())
+    color_map = plt.get_cmap('magma_r')
+    colors = color_map(norm(mean_values['mean_error'])).tolist()
+
+    fig, axes = plt.subplots(nrows=3, figsize=(12, 15), gridspec_kw={'height_ratios': [3, 1, 1]})
+
+    sns.lineplot(x=quantile_values, y=mean_values[f'mean_{target_variable}'], label='Real Mean', marker='o', ax=axes[0])
+    sns.lineplot(x=quantile_values, y=mean_values['mean_predicted'], label='Predicted Mean', marker='x', ax=axes[0])
+
+    sns.barplot(x=quantile_values, y=mean_values['mean_error'], palette=colors, ax=axes[1], hue=quantile_values, dodge=False,
+                legend=False)
+
+    sns.histplot(data=data, x=feature, bins = len(quantile_values), stat='percent', kde=False, color='blue', alpha=0.3, ax=axes[2])
+
+    axes = configure_mean_vs_predicted_axes(axes, feature, ticks, target_variable, True)
 
     plt.tight_layout()
-    output_path = report_resources_path / f"10_real_vs_predicted_quantiles_by_{feature}.jpg"
-    plt.savefig(output_path)
-    plt.close()
+    return fig, axes, mean_values
 
-    if data[feature].dtype == 'category':
-        encoder_path = get_encoder_path(feature)
-        encoder = joblib.load(encoder_path)
-        inv = encoder.inverse_transform(quantile_values)
-    else:
-        inv = quantile_values
+def plot_real_vs_predicted_by_feature_date(data: pd.DataFrame, feature: str,
+                                                target_variable: str, report_resources_path: Path,
+                                                num_quantiles: int = 20):
+    pass
 
-    mean_values['values'] = inv
-    top_errors = mean_values.nlargest(20, 'error')
-    top_errors['feature_'] = feature
-    top_errors['contrib'] = top_errors['error'] * top_errors[feature] / len(data)
-    print(feature, top_errors['contrib'].sum())
+def plot_real_vs_predicted_by_feature_other(data: pd.DataFrame, feature: str,
+                                            target_variable: str) -> Tuple[plt.Figure, np.ndarray, pd.DataFrame]:
+    data['quantiles'] = data[feature]
+    quantile_values = sorted(data[feature].unique())
+    mean_values = get_mean_values(data, feature, target_variable, is_numeric = False)
 
+    norm = plt.Normalize(vmin=mean_values['mean_error'].min(), vmax=mean_values['mean_error'].max())
+    color_map = plt.get_cmap('magma_r')
+    colors = color_map(norm(mean_values['mean_error'])).tolist()
+
+    fig, axes = plt.subplots(nrows=3, figsize=(12, 15), gridspec_kw={'height_ratios': [3, 1, 1]})
+
+    sns.lineplot(x=quantile_values, y=mean_values[f'mean_{target_variable}'], label='Real Mean', marker='o', ax=axes[0])
+    sns.lineplot(x=quantile_values, y=mean_values['mean_predicted'], label='Predicted Mean', marker='x', ax=axes[0])
+
+    sns.barplot(x=quantile_values, y=mean_values['mean_error'], palette=colors, ax=axes[1], hue=quantile_values, dodge=False,
+                legend=False)
+
+    sns.countplot(data=data, x=feature, stat='percent', color='blue', alpha=0.3, order = quantile_values,
+                 ax=axes[2])
+
+    axes = configure_mean_vs_predicted_axes(axes, feature, quantile_values, target_variable)
+    return fig, axes, mean_values
+
+
+
+
+def plot_real_vs_predicted_by_feature(data_p: pd.DataFrame, predictions : pd.Series, feature: str,
+                                      target_variable: str, report_resources_path: Path):
+
+    data = data_p[[feature, target_variable]].copy()
+
+    data['predicted'] = predictions
+    data['error'] = abs(data[target_variable].values - data['predicted'].values) / data[target_variable].values * 100
+
+    data = data.dropna(subset=[feature, target_variable])
+    fig, axes, mean_values = None, None, None
+    if pd.api.types.is_numeric_dtype(data[feature]):
+        fig, axes, mean_values = plot_real_vs_predicted_by_feature_numeric(data, feature, target_variable)
+
+    if pd.api.types.is_datetime64_dtype(data[feature]):
+        plot_real_vs_predicted_by_feature_date(data, feature, target_variable, report_resources_path)
+
+    if pd.api.types.is_string_dtype(data[feature]):
+        fig, axes, mean_values = plot_real_vs_predicted_by_feature_other(data, feature, target_variable)
+
+    if fig is None:
+        return
+
+    output_path = report_resources_path / f"10_real_vs_predicted_by_{feature}_a.jpg"
+    fig.savefig(output_path)
+    plt.close(fig)
+
+
+    top_errors = mean_values.nlargest(10, 'mean_error')
+    top_errors['error_contribution'] = top_errors['mean_error'] * top_errors[f'count_{feature}'] / len(data)
+    top_errors = top_errors[[f'{feature}_range', f'count_{feature}', f'mean_{target_variable}', f'mean_predicted', 'mean_error', 'error_contribution']]
+    top_errors = top_errors.round(decimals = 2)
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.axis('tight')
     ax.axis('off')
+    ax.set_title(f'Segments with top error for {feature}')
     table = ax.table(cellText=top_errors.values, colLabels=top_errors.columns, cellLoc='center', loc='center')
 
-    output_path = report_resources_path / f"11_top_10_biggest_errors_by_{feature}.jpg"
-    plt.savefig(output_path)
+    output_path = report_resources_path / f"10_top_10_biggest_errors_by_{feature}_b.jpg"
+    plt.savefig(output_path, dpi = 150)
     plt.close()
-
 
 def k_largest_errors(data: pd.DataFrame, errors: pd.Series, k: int, report_resources_path: Path):
     dc = data.copy()
     dc['abs_error'] = abs(errors)
+
     k_largest_errors = dc.sort_values(by='abs_error', ascending=False).iloc[:k]
     k_largest_errors_style = k_largest_errors.style.format(precision=2)
+
     fig, ax = plt.subplots(figsize=(10, len(k_largest_errors_style.data) * 0.5))
     ax.axis('off')
     table = ax.table(cellText=k_largest_errors_style.data.values, colLabels=k_largest_errors_style.data.columns,
@@ -392,6 +478,10 @@ def generate_report_cover_image(report_resources_path: Path, insurance_name: str
 def generate_report_util(model: xgboost.Booster, data: pd.DataFrame, features: list, target_variable: str,
                          out_of_sample_predictions: pd.Series, report_path: Path, report_resources_path: Path,
                          skip_pdp: bool = False):
+
+    data = reconstruct_categorical_variables(data)
+    features = data.columns.difference([target_variable])
+
     logging.info("Preparing directories for the report.")
     prepare_dir(report_path)
     prepare_dir(report_resources_path)
@@ -444,11 +534,9 @@ def generate_report_util(model: xgboost.Booster, data: pd.DataFrame, features: l
     plot_real_vs_predicted_quantiles(real, out_of_sample_predictions, report_resources_path)
 
     logging.info("Plotting real vs predicted quantiles by feature.")
-    plot_real_vs_predicted_quantiles_by_feature(data, out_of_sample_predictions, 'DateCrawled', target_variable,
-                                                report_resources_path)
 
-    for feature in ['DateCrawled'] + features:
-        plot_real_vs_predicted_quantiles_by_feature(data, out_of_sample_predictions, feature, target_variable,
+    for feature in features:
+        plot_real_vs_predicted_by_feature(data, out_of_sample_predictions, feature, target_variable,
                                                     report_resources_path)
 
     logging.info("Generating PDF report.")
@@ -472,12 +560,9 @@ def generate_report(data_name: str, target_variable: str, skip_pdp: bool):
 
     data, features = load_data(data_path, features_path, target_variable)
     model = load_model(model_path)
-    out_of_sample_predictions = pd.read_csv(out_of_sample_predictions_path)
-    out_of_sample_predictions.columns = ['id_case', target_variable]
-    out_of_sample_predictions = out_of_sample_predictions.set_index('id_case')
-    out_of_sample_predictions = out_of_sample_predictions[target_variable]
+    out_of_sample_predictions = load_out_of_sample_predictions(out_of_sample_predictions_path, target_variable)
 
-    generate_report_util(model, data, features, target_variable, np.squeeze(out_of_sample_predictions), report_path,
+    generate_report_util(model, data, features, target_variable, out_of_sample_predictions, report_path,
                          report_resources_path, skip_pdp)
 
 

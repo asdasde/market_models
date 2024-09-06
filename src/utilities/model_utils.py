@@ -34,11 +34,12 @@ def get_all_models_trained_on(data_name: str, model_type: ModelType) -> list:
                 model_names.append(model_name)
     return model_names
 
-
+import re
 def make_d_matrix(data_features: pd.DataFrame,
                   data_target: pd.DataFrame,
                   is_classification: bool) -> xgboost.DMatrix:
     if is_classification:
+
         return xgboost.DMatrix(data_features, label=data_target, enable_categorical=True)
     else:
         return xgboost.DMatrix(data_features, data_target, enable_categorical=True)

@@ -243,7 +243,7 @@ def load_incremental_profile_params(service: str, base_profile_v: str, values_v:
     return base_profile['data'], values
 
 
-@click.command(name="generate_incremnetal_data")
+@click.command(name="generate_incremental_data")
 @click.option('--service', default='netrisk_casco', type=click.STRING, help='Currently only supports netrisk casco')
 @click.option('--base_profile_v', default='v1', type=click.STRING)
 @click.option('--values_v', default=None)
@@ -316,30 +316,36 @@ def export_profile(profile: pd.DataFrame, template: pd.DataFrame, indices: dict,
 @click.option("--data_name", required=True, type=click.STRING, help='Data name (example incremental_data_base_profile_v1_values_v2')
 @click.option('--template_date', required=True, type=click.STRING, help='Date in the file name of the template')
 def export_data_for_crawling(service: str, data_name: str, template_date: str):
+
     profiles_export_path = get_profiles_for_crawling_dir(data_name)
     data_path = get_profiles_for_crawling_transposed(data_name)
     zip_path = get_profiles_for_crawling_zip_path(data_name)
     template_path = get_template_path(service, template_date)
     row_values_path = get_row_values_path(service, template_date)
+
     if not data_path.exists():
         logging.info("No sampled data, please generate it first ...")
         logging.info("Aborting ...")
         return
+
     data = read_file(data_path)
     template = read_file(template_path)
+
     with open(row_values_path, 'r') as row_values:
         row_values = eval(' '.join(row_values.readlines()))
     indices = dict(zip(template['name'], template['id']))
+
     files_list = []
     for i in range(len(data)):
         export_profile(data.iloc[i], template, indices, row_values, [], profiles_export_path)
         files_list.append(profiles_export_path / f"{i}.csv")
+
     zip_list_of_files(files_list, Path(zip_path))
     for file in files_list:
         file.unlink()  # Use unlink() instead of os.remove
-    send_profiles_to_the_server(Path(zip_path), f"crawler-mocha/{data_name}/{data_name}.zip", f"crawler-mocha/{data_name}/", get_remote_crawler_path())
+    send_profiles_to_the_server(Path(zip_path), f"crawler-mocha/{data_name}/{data_name}.zip", get_remote_profiles_path(data_name))
 
-def send_profiles_to_the_server(local_zip_path: Path, remote_zip_path: str, remote_unzip_path: str, remote_script_path: Path = None):
+def send_profiles_to_the_server(local_zip_path: Path, remote_zip_path: str, remote_unzip_path: Path):
     try:
         ssh = paramiko.SSHClient()
 
@@ -376,7 +382,7 @@ def zip_and_fetch_profiles_from_the_server(remote_profiles_path, remote_zip_path
         print(stdout.read().decode("utf-8"))
 
         sftp = ssh.open_sftp()
-        sftp.get(remote_zip_path, local_zip_path)
+        sftp.get(str(remote_zip_path), str(local_zip_path))
         sftp.close()
     except Exception as e:
         print(f"An error occurred: {e}")
@@ -386,16 +392,15 @@ def zip_and_fetch_profiles_from_the_server(remote_profiles_path, remote_zip_path
 @click.command(name="run_crawler")
 @click.option('--num_processes', default=1, type=click.INT, help='Number of processes to start')
 @click.option('--remote_profiles_path', required=True, type=click.STRING, help='Location of the profiles on the server')
-def run_crawler_script_on_server(num_processes: int, remote_profiles_path: str):
+def run_crawler_script_on_server(num_processes: int, data_name: str):
     try:
         ssh = paramiko.SSHClient()
 
         private_key = paramiko.RSAKey(filename=PRIVATE_KEY_PATH)
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(hostname=REMOTE_HOST_NAME, username='root', pkey=private_key, allow_agent=True, look_for_keys=True)
-
         cd_command = f"cd {REMOTE_CRAWLER_DIRECTORY}"
-        crawl_command = f"./crawl.sh -n {num_processes} -d {remote_profiles_path}"
+        crawl_command = f"./crawl.sh -n {num_processes} -d {data_name}/"
         full_command = f"{cd_command} && {crawl_command}"
 
         stdin, stdout, stderr = ssh.exec_command(full_command)
@@ -440,9 +445,11 @@ def execute_all_crawling(profile_type, service, params_v, policy_start_date, cus
         else:
             generate_incremnetal_data.callback(service, base_profile_v, values_v)
             data_name = get_incremental_data_name(service, base_profile_v, values_v)
+
         logging.info("Step 2: Exporting data for crawling...")
         export_data_for_crawling.callback(service, data_name, template_date)
         logging.info("Step 3: Running crawler on the server...")
+
         run_crawler_script_on_server.callback(num_processes, data_name)
         logging.info("Full process completed successfully!")
     except Exception as e:

@@ -4,6 +4,9 @@ from hyperopt import hp
 
 TEST_SIZE = 0.1
 RANDOM_STATE = 42
+ERROR_MODEL_CLASSIFICATION_THRESHOLD = 0.8
+PRESENCE_MODEL_CLASSIFICATION_THRESHOLD = 0.5
+MAX_EVALS = 5
 
 DEFAULT_PARAMS_REGRESSION = {
     'objective': 'reg:squarederror',
@@ -12,17 +15,17 @@ DEFAULT_PARAMS_REGRESSION = {
     'eta': 0.3,
     'num_boost_round': 100,
     'early_stopping_rounds': None,
-    "colsample_bytree": 0.603082145359716,
-    "gamma": 1.1829268099644894,
-    "lambda": 0.16917750724256597,
-    "learning_rate": 0.07609398922995288,
+    "colsample_bytree": 0.9963829889516952,
+    "gamma": 1.9729702249620764,
+    "lambda": 0.6687059388368572,
+    "learning_rate": 0.14904051561388795,
     "max_depth": 7,
     "min_child_weight": 2,
     "n_estimators": 1000,
-    "reg_alpha": 91.36426983962457,
-    "reg_lambda": 0.7181972609115401,
+    "reg_alpha": 81.51686654321942,
+    "reg_lambda": 0.1484520061561239,
     "seed": 0,
-    "subsample": 0.8482744016970223
+    "subsample": 0.7355645569069456
 }
 
 DEFAULT_PARAMS_CLASSIFICATION = {

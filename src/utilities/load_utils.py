@@ -6,6 +6,9 @@ import xgboost
 import pandas as pd
 from pathlib import Path
 from typing import Tuple
+
+from PIL.features import features
+
 from utilities.path_utils import *
 from utilities.files_utils import read_file
 from utilities.constants import FEATURES_TO_IGNORE, BONUS_MALUS_CLASSES_DICT
@@ -87,43 +90,38 @@ def apply_features(data: pd.DataFrame, features: list, feature_dtypes: dict) -> 
     return data
 
 
-def choose_postal_categories(data: pd.DataFrame, target_variable: str = None) -> pd.DataFrame:
-    if target_variable is None:
-        target_variable = 'ALFA_price'
+def choose_columns_specific_for_target_variable(data : pd.DataFrame, features : list, target_variable : str) -> tuple:
+    cut_cols_to_remove = [col for col in data.columns if target_variable not in col and 'cut' in col]
+    features = [col for col in features if col not in cut_cols_to_remove]
+    return data.drop(columns = cut_cols_to_remove), features
 
-    postal_category_column_name = target_variable.replace("_price", "_postal_category")
 
-    if postal_category_column_name in data.columns:
-        data['Category'] = data[postal_category_column_name]
 
-    return data
-
+def load_features(features_path : Path) -> tuple:
+    with open(features_path) as file:
+        features = file.readlines()
+        features = [feature.replace('\n', '') for feature in features]
+        feature_dtypes = {feature.split(' :: ')[0]: feature.split(' :: ')[1] for feature in features}
+        features = [feature.split(' :: ')[0] for feature in features]
+    FEATURES_TO_IGNORE = ['DateCrawled']
+    features = [feature for feature in features if feature not in FEATURES_TO_IGNORE]
+    return features, feature_dtypes
 
 def load_data(data_path: Path, features_path: Path, target_variable: str = None, apply_feature_dtypes: bool = True,
               drop_target_na=True) -> Tuple[pd.DataFrame, list]:
     data = read_file(data_path)
     logging.info("Imported data...")
 
-    with open(features_path) as file:
-        features = file.readlines()
-        features = [feature.replace('\n', '') for feature in features]
-        feature_dtypes = {feature.split(',')[0]: feature.split(',')[1] for feature in features}
-        features = [feature.split(',')[0] for feature in features]
+    features, feature_dtypes = load_features(features_path)
     logging.info("Imported feature data...")
 
-    features = [feature for feature in features if feature not in FEATURES_TO_IGNORE]
     if apply_feature_dtypes:
         data = apply_features(data, features, feature_dtypes)
 
-    data = choose_postal_categories(data, target_variable)
-
-    features = [feature for feature in features if '_postal_category' not in feature]
     if target_variable is not None:
-        target_variable_cuts = [f'{target_variable}_{feature}_cut' for feature in features]
-        features = [feature for feature in features if '_cut' not in feature or feature in target_variable_cuts]
+        data, features = choose_columns_specific_for_target_variable(data, features, target_variable)
 
     columns = features
-    columns = (['DateCrawled'] if 'DateCrawled' in data.columns else []) + columns
 
     if target_variable is None:
         data = data[columns]
@@ -140,6 +138,13 @@ def load_model(model_path: Path) -> xgboost.Booster:
         return xgboost.Booster(model_file=str(model_path))
     except Exception:
         return None
+
+def load_out_of_sample_predictions(out_of_sample_predictions_path : Path, target_variable: str) -> pd.DataFrame:
+    out_of_sample_predictions = pd.read_csv(out_of_sample_predictions_path)
+    out_of_sample_predictions.columns = ['id_case', target_variable]
+    out_of_sample_predictions = out_of_sample_predictions.set_index('id_case')
+    out_of_sample_predictions = out_of_sample_predictions[target_variable]
+    return out_of_sample_predictions
 
 def load_params(service: str, params_v: str) -> dict[str, pd.DataFrame]:
     params_path = get_params_path(service, params_v)
@@ -164,6 +169,18 @@ def load_other(service: str) -> dict[str, pd.DataFrame]:
             others[other] = pd.read_table(other_file, header=None, usecols=[1])
     return others
 
+
+def reconstruct_categorical_variables(data : pd.DataFrame) -> pd.DataFrame:
+    dummy_columns = [col for col in data.columns if col.endswith('__dummy')]
+    original_vars = set([col.split('__')[0] for col in dummy_columns])
+    dummies_by_var = {var : [col for col in dummy_columns if col.startswith(var + '__')] for var in original_vars }
+
+    new_data = data.copy()
+    for var, dummies in dummies_by_var.items():
+        var_col = pd.from_dummies(data[dummies].rename(columns={col: col.replace('__dummy', '').replace(f'{var}__', '') for col in dummies}))
+        new_data[var] = var_col
+        new_data = new_data.drop(columns=dummies)
+    return new_data
 
 def load_distribution(service: str, params_v: str):
     return load_params(service, params_v), load_other(service)
