@@ -34,7 +34,7 @@ def get_model_directory(model_name: str) -> Path:
     return MODELS_PATH / model_name
 
 def get_model_path(model_name: str) -> Path:
-    return get_model_directory(model_name) / f'{model_name}.json'
+    return get_model_directory(model_name) / f'{model_name}netrisk_casco_transposed_config_2024_07_31.json'
 
 def get_model_hyperparameters_path(model_name: str) -> Path:
     return get_model_directory(model_name) / f'{model_name}_hyperparameters.json'
@@ -54,6 +54,9 @@ def get_template_path(service: str, date: str) -> Path:
 def get_row_values_path(service: str, date: str) -> Path:
     return DISTRIBUTION_PATH / service / 'templates' / f'{service}_row_values_{date}.txt'
 
+def get_transposed_config_path(service: str, date: str) -> Path:
+    return DISTRIBUTION_PATH / service / 'templates' / f'{service}_transposed_config_{date}.json'
+
 def get_sampled_data_name(service: str, params_v: str) -> str:
     current_date = datetime.now().strftime("%Y_%m_%d")
     return f"{service}_sampled_data_{params_v}_{current_date}"
@@ -67,8 +70,16 @@ def get_incremental_base_profile_path(service: str, v: str) -> Path:
 def get_incremental_values_path(service: str, v: str) -> Path:
     return DISTRIBUTION_PATH / service / 'incremental_params' / 'values' / f'values_{v}.csv'
 
-def get_private_key_file_path() -> Path:
-    return Path('../../../ssh_key')
+def get_mtpl_postal_categories_path(target_variable: str) -> Path:
+    tables_name = column_to_folder_mapping.get(target_variable)
+    comp_name = tables_name.replace('_tables', '')
+    return MTPL_POSTAL_CATEGORIES_PATH / f'{comp_name}_lookups_table.csv'
+
+
+def get_mtpl_default_values_path(target_variable: str) -> Path:
+    tables_name = column_to_folder_mapping.get(target_variable)
+    comp_name = tables_name.replace('_tables', '')
+    return MTPL_POSTAL_CATEGORIES_PATH / f'{comp_name}_factor_default_values_table.csv'
 
 def get_encoder_path(feature: str) -> Path:
     return ENCODERS_PATH / f'{feature}_encoder.pkl'
@@ -79,6 +90,13 @@ def get_report_path(model_name: str) -> Path:
 def get_report_resource_path(model_name: str) -> Path:
     return REPORTS_PATH / model_name / 'resources'
 
+def get_data_name_references_path() -> Path:
+    return REFERENCES_PATH / 'data_name_references.json'
+
+def get_brackets_path(feature: str) -> Path:
+    return BRACKETS_PATH / f'{feature}_brackets.json'
+
+
 def get_profiles_for_crawling_dir(data_name: str) -> Path:
     return INTERIM_DATA_PATH / data_name
 
@@ -88,39 +106,22 @@ def get_profiles_for_crawling_transposed(data_name: str) -> Path:
 def get_profiles_for_crawling_zip_path(data_name: str) -> Path:
     return get_profiles_for_crawling_dir(data_name) / f'{data_name}.zip'
 
-def get_remote_profiles_after_crawling_zip_path(data_name: str) -> Path:
-    return REMOTE_CRAWLER_DIRECTORY / data_name / f'{data_name}_crawled.zip'
-
 def get_profiles_after_crawling_zip_path(data_name: str) -> Path:
     return get_profiles_for_crawling_dir(data_name) / f'{data_name}_crawled.zip'
 
-def get_mtpl_postal_categories_path(target_variable: str) -> Path:
-    tables_name = column_to_folder_mapping.get(target_variable)
-    comp_name = tables_name.replace('_tables', '')
-    return MTPL_POSTAL_CATEGORIES_PATH / f'{comp_name}_lookups_table.csv'
 
-def get_mtpl_default_values_path(target_variable: str) -> Path:
-    tables_name = column_to_folder_mapping.get(target_variable)
-    comp_name = tables_name.replace('_tables', '')
-    return MTPL_POSTAL_CATEGORIES_PATH / f'{comp_name}_factor_default_values_table.csv'
+def get_private_key_file_path() -> Path:
+    return Path('../../../ssh_key')
 
-def get_remote_crawler_path() -> Path:
-    return Path('crawler.py')
+def get_remote_profiles_after_crawling_zip_path(data_name: str) -> Path:
+    return (REMOTE_CRAWLER_DIRECTORY / data_name / f'{data_name}_crawled.zip').as_posix()
 
 def get_remote_crawl_sh_path() -> Path:
-    return REMOTE_CRAWLER_DIRECTORY / 'crawl.sh'
-
-def get_remote_queue_path() -> Path:
-    return REMOTE_CRAWLER_DIRECTORY / 'queue'
+    return (REMOTE_CRAWLER_DIRECTORY / 'crawl.sh').as_posix()
 
 def get_remote_profiles_path(data_name: str) -> Path:
-    return REMOTE_CRAWLER_DIRECTORY / data_name
+    return (REMOTE_CRAWLER_DIRECTORY / data_name).as_posix()
 
 def get_remote_profiles_subdirectory_path(data_name: str) -> Path:
-    return REMOTE_CRAWLER_DIRECTORY / data_name / 'profiles'
+    return (REMOTE_CRAWLER_DIRECTORY / data_name / 'profiles').as_posix()
 
-def get_data_name_references_path() -> Path:
-    return REFERENCES_PATH / 'data_name_references.json'
-
-def get_brackets_path(feature: str) -> Path:
-    return BRACKETS_PATH / f'{feature}_brackets.json'

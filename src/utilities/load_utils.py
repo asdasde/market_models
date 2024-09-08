@@ -1,4 +1,5 @@
 import glob
+import json
 import joblib
 import logging
 import xgboost
@@ -169,6 +170,13 @@ def load_other(service: str) -> dict[str, pd.DataFrame]:
             others[other] = pd.read_table(other_file, header=None, usecols=[1])
     return others
 
+def load_transposed_config(service : str, date : str):
+
+    transposed_config_path = get_transposed_config_path(service, date)
+    with open(transposed_config_path, 'r') as json_file:
+        data_loaded = json.load(json_file)
+    return data_loaded
+
 
 def reconstruct_categorical_variables(data : pd.DataFrame) -> pd.DataFrame:
     dummy_columns = [col for col in data.columns if col.endswith('__dummy')]
@@ -184,3 +192,4 @@ def reconstruct_categorical_variables(data : pd.DataFrame) -> pd.DataFrame:
 
 def load_distribution(service: str, params_v: str):
     return load_params(service, params_v), load_other(service)
+

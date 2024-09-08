@@ -13,7 +13,7 @@ REFERENCES_PATH = Path('../references/')
 BRACKETS_PATH = Path('../data/external/feature_brackets/')
 MTPL_POSTAL_CATEGORIES_PATH = Path('../data/external/mtpl_postal_categories/')
 
-REMOTE_CRAWLER_DIRECTORY = Path('crawler-mocha/')
+REMOTE_CRAWLER_DIRECTORY = 'crawler-mocha/'
 
 
 

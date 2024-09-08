@@ -418,9 +418,6 @@ def fetch_profiles_from_the_server(service: str, data_name: str):
     remote_profiles_path = get_remote_profiles_subdirectory_path(data_name)
     remote_zip_path = get_remote_profiles_after_crawling_zip_path(data_name)
     local_zip_path = get_profiles_after_crawling_zip_path(data_name)
-    print(remote_profiles_path)
-    print(remote_zip_path)
-    print(local_zip_path)
     zip_and_fetch_profiles_from_the_server(remote_profiles_path, remote_zip_path, local_zip_path)
 
 

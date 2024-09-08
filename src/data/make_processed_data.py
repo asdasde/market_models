@@ -115,8 +115,6 @@ def remove_special_chars_from_columns(data: pd.DataFrame, features: List[str]) -
 import pandas as pd
 from datetime import datetime
 
-
-
 def make_processed_crawler_data(data: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
 
     target_variables = get_target_variables(data.columns)

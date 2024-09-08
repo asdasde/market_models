@@ -32,7 +32,7 @@ def read_file(file_path: Path) -> pd.DataFrame:
         return pd.read_csv(file_path)
     elif file_extension in ['.xls', '.xlsx']:
         return pd.read_excel(file_path)
-    elif file_extension == '.json':
+    elif file_extension == 'netrisk_casco_transposed_config_2024_07_31.json':
         return pd.read_json(file_path)
     else:
         raise ValueError(f"Unsupported file format: {file_extension}")

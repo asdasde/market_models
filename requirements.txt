@@ -11,3 +11,10 @@ scikit_learn
 seaborn
 setuptools
 xgboost
+
+SQLAlchemy
+ipython
+jupyterlab-pygments
+beautifulsoup4
+scikit-learn
+mlxtend
