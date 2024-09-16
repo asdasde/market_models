@@ -552,17 +552,16 @@ def generate_report_util(model: xgboost.Booster, data: pd.DataFrame, features: l
 def generate_report(data_name: str, target_variable: str, skip_pdp: bool):
     model_name = get_model_name(data_name, target_variable)
     data_path = get_processed_data_path(data_name)
-    features_path = get_features_path(data_name)
     model_path = get_model_path(model_name)
     out_of_sample_predictions_path = get_model_cv_out_of_sample_predictions_path(model_name)
     report_path = Path(get_report_path(model_name))
     report_resources_path = Path(get_report_resource_path(model_name))
 
-    data, features = load_data(data_path, features_path, target_variable)
+    data, features_info, features_on_top, features_model = load_data(data_path, target_variable)
     model = load_model(model_path)
     out_of_sample_predictions = load_out_of_sample_predictions(out_of_sample_predictions_path, target_variable)
 
-    generate_report_util(model, data, features, target_variable, out_of_sample_predictions, report_path,
+    generate_report_util(model, data, features_model, target_variable, out_of_sample_predictions, report_path,
                          report_resources_path, skip_pdp)
 
 

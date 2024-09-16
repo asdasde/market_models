@@ -228,7 +228,6 @@ def train_model(data_name, target_variable):
     model_name = get_model_name(data_name, target_variable)
 
     data_path = get_processed_data_path(data_name)
-    features_path = get_features_path(data_name)
     model_path = get_model_path(model_name)
     hyperparameters_path = get_model_hyperparameters_path(model_name)
     out_of_sample_predictions_path = get_model_cv_out_of_sample_predictions_path(model_name)
@@ -236,13 +235,13 @@ def train_model(data_name, target_variable):
     report_resources_path = get_report_resource_path(model_name)
 
     prepare_dir(get_model_directory(model_name))
-    data, features = load_data(data_path, features_path, target_variable)
-    model, hyperparameters, out_of_sample_predictions = train_model_util(data, features, target_variable, False)
+    data, features_info, features_on_top, features_model = load_data(data_path, target_variable)
+    model, hyperparameters, out_of_sample_predictions = train_model_util(data, features_model, target_variable, False)
 
     export_model(model, hyperparameters, out_of_sample_predictions, model_path, hyperparameters_path,
                  out_of_sample_predictions_path)
 
-    make_report.generate_report_util(model, data, features, target_variable, out_of_sample_predictions, report_path,
+    make_report.generate_report_util(model, data[features_model + [target_variable]], features_model, target_variable, out_of_sample_predictions, report_path,
                                      report_resources_path, skip_pdp = True)
 
 
@@ -282,15 +281,11 @@ def train_market_presence_model(data_name, target_variable):
     presence_model_out_of_sample_predictions_path = get_model_cv_out_of_sample_predictions_path(presence_model_name)
 
     data_path = get_processed_data_path(data_name)
-    features_path = get_features_path(data_name)
 
-    data, features = load_data(data_path, features_path, target_variable, apply_feature_dtypes=True,
-                               drop_target_na=False)
+    data, features_info, features_on_top, features_model = load_data(data_path, target_variable, drop_target_na=False)
     data[f'{target_variable}_presence'] = ~data[target_variable].isna()
-    presence_model, presence_model_hyperparameters, presence_model_out_of_sample_predictions = train_model_util(data,
-                                                                                                                features,
-                                                                                                                f'{target_variable}_presence',
-                                                                                                                True)
+    presence_model, presence_model_hyperparameters, presence_model_out_of_sample_predictions = (
+        train_model_util(data, features_model, f'{target_variable}_presence',True))
 
     prepare_dir(get_model_directory(presence_model_name))
     export_model(presence_model, presence_model_hyperparameters, presence_model_out_of_sample_predictions,
@@ -318,11 +313,11 @@ def train_error_model(data_name, target_variable, use_pretrained_model):
     error_model_hyperparameters_path = get_model_hyperparameters_path(error_model_name)
     error_model_out_of_sample_predictions_path = get_model_cv_out_of_sample_predictions_path(error_model_name)
 
-    data, features = load_data(data_path, features_path, target_variable)
+    data, features_info, features_on_top, features_model = load_data(data_path, target_variable)
 
     if (use_pretrained_model and not os.path.exists(model_path)) or not use_pretrained_model:
         prepare_dir(get_model_directory(model_name))
-        model, hyperparameters, out_of_sample_predictions = train_model_util(data, features, target_variable, False)
+        model, hyperparameters, out_of_sample_predictions = train_model_util(data, features_model, target_variable, False)
         export_model(model, hyperparameters, out_of_sample_predictions, model_path, hyperparameters_path,
                      out_of_sample_predictions_path)
 
@@ -337,11 +332,11 @@ def train_error_model(data_name, target_variable, use_pretrained_model):
     errors_feature = f'{model_name}_errors'
     data[errors_feature] = errors
 
-    data = data[features + [errors_feature]]
+    data = data[features_model + [errors_feature]]
 
-    evaluate_baseline_error_model(data, features, errors_feature)
+    evaluate_baseline_error_model(data, features_model, errors_feature)
 
-    error_model, error_model_hyperparameters, error_model_out_of_sample_predictions = train_model_util(data, features,
+    error_model, error_model_hyperparameters, error_model_out_of_sample_predictions = train_model_util(data, features_model,
                                                                                                        errors_feature,
                                                                                                        True)
 

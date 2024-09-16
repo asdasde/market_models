@@ -2,7 +2,8 @@ import os
 import sys
 import click
 import pandas as pd
-
+from warnings import simplefilter
+simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pathlib import Path
@@ -27,9 +28,9 @@ def predict_all_models(data : pd.DataFrame, train_data_name : str, apply_presenc
         model_path = get_model_path(model_name)
         presence_model_path = get_model_path(presence_model_name)
         model = load_model(model_path)
-
+        print(model_path)
         if (model is None) or (not is_compatible(model, data)):
-            print('skipped ', target_variable)
+            print('skipped ', target_variable, 'no model' if model is None else 'not compatible')
             continue
 
         expected_features = get_expected_features(model)
@@ -65,21 +66,26 @@ def model_predict(data_name: str, all_models: bool, train_data_name : str, model
 
     data_path = get_processed_data_path(data_name)
     features_path = get_features_path(data_name)
-    model_path = get_model_path(model_name)
 
-    data, features = load_data(data_path, features_path, )
+    data, features_info, features_on_top, features_model = load_data(data_path)
     if all_models:
         predictions_all_models = predict_all_models(data, train_data_name, apply_presence_models=True)
         for model_name, predictions in predictions_all_models.items():
             data[model_name] = predictions
 
+        print(data[predictions_all_models.keys()])
+        print(data.index)
+
         predictions_path = get_predictions_all_path(data_name)
         logging.info(f"Exported predictions to {predictions_path}.")
         data.to_csv(predictions_path)
     else:
+        model_path = get_model_path(model_name)
+
         if not model_path:
             click.echo("Error: Please specify a model path.")
             return
+
         model = load_model(model_path)
         if not is_compatible(model, data):
             click.echo("Error: Model and data are not compatible.")

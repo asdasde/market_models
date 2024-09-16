@@ -1,4 +1,12 @@
 from pathlib import Path
+from dotenv import load_dotenv, find_dotenv
+import os
+
+load_dotenv(find_dotenv())
+
+REMOTE_SERVER_FOR_CRAWLING = os.getenv('SERVER_FOR_CRAWLING')
+REMOTE_SERVER_FOR_SAVING_DATA = os.getenv('SERVER_FOR_SAVING_DATA')
+REMOTE_CRAWLER_DIRECTORY = os.getenv('REMOTE_CRAWLER_DIRECTORY')
 
 DISTRIBUTION_PATH = Path('../data/external/distributions/')
 PROCESSED_DATA_PATH = Path('../data/processed/')
@@ -13,8 +21,4 @@ REFERENCES_PATH = Path('../references/')
 BRACKETS_PATH = Path('../data/external/feature_brackets/')
 MTPL_POSTAL_CATEGORIES_PATH = Path('../data/external/mtpl_postal_categories/')
 
-REMOTE_CRAWLER_DIRECTORY = 'crawler-mocha/'
 
-
-
-REMOTE_HOST_NAME = "43mp.l.time4vps.cloud"

@@ -22,11 +22,11 @@ NETRISK_CASCO_DTYPES = {'isRecent': 'bool', 'CarMake': 'category', 'CarModel': '
                         'Category': 'int', 'Longitude': 'float', 'Latitude': 'float', 'Age': 'int', 'LicenseAge': 'int',
                         'BonusMalus': 'category',
                         'BonusMalusCode': 'category'}
+NETRISK_CASCO_EQUIPMENT_COLS = ['polished_specialty','AirConditioning','AlloyWheels','AutomaticTransmission','LeatherSeats','NavigationSystems','XenonHeadlights','Camera','Sunroof','LedHeadlights','ShockAbsorber','UltraSonic','DrivingSupportSystem']
+NETRISK_CASCO_FEATURES_ON_TOP = ['DeductiblePercentage','DeductibleAmount'] + NETRISK_CASCO_EQUIPMENT_COLS
+NETRISK_CASCO_FEATURES_INFO = ['DateCrawled']
 
-#FEATURES_TO_IGNORE = ['PostalCode2', 'PostalCode3']
-#FEATURES_TO_IGNORE = ['BonusMalusCode', 'CarMakerCategory']
-#FEATURES_TO_IGNORE = ['CarModel']
-#FEATURES_TO_IGNORE = ['BonusMalusCode', 'CarMakerCategory', 'isRecent', 'CarMake', 'CarModel', 'CarAge', 'ccm', 'kg', 'car_value', 'PostalCode', 'PostalCode2', 'PostalCode3', 'Category', 'Longitude', 'Latitude', 'Age', 'LicenseAge', 'BonusMalus', 'ALFA_price_Age_cut', 'ALLIANZ_price_Age_cut', 'GENERALI_price_Age_cut', 'GROUPAMA_price_Age_cut', 'K&AMP;H_price_Age_cut', 'KÖBE_price_Age_cut', 'MAGYAR_price_Age_cut', 'SIGNAL_price_Age_cut', 'UNIQA_price_Age_cut']
+
 FEATURES_TO_IGNORE = []
 DEFAULT_TARGET_VARIABLES = ['ALFA_price', 'ALLIANZ_price', 'GENERALI_price', 'GENERTEL_price',
                             'GROUPAMA_price', 'K&AMP;H_price', 'KÖBE_price', 'MAGYAR_price',
@@ -42,7 +42,7 @@ FORINT_TO_EUR = 0.0026
 
 
 USUAL_TARGET_VARIABLES = ['K&AMP;H_price', 'ALFA_price', 'SIGNAL_price', 'KÖBE_price', 'GROUPAMA_price', 'UNIQA_price',
-                          'GENERALI_price', 'ALLIANZ_price', 'MAGYAR_price']
+                          'GENERALI_price', 'ALLIANZ_price', 'MAGYAR_price', 'UNION_price', 'GRÁNIT_price', 'GENERTEL_price']
 
 CURRENT_YEAR = datetime.today().year
 
@@ -60,5 +60,7 @@ column_to_folder_mapping = {
     'SIGNAL_price': 'si_tables',
     'UNION_price': 'union_tables',
     'UNIQA_price': 'uniqa_tables',
-    'WÁBERER_price': 'waberer_tables'
+    'WÁBERER_price': 'waberer_tables',
+    'GRÁNIT_price' : 'waberer_tables',
+
 }

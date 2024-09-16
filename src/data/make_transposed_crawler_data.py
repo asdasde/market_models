@@ -3,6 +3,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from dotenv import load_dotenv, find_dotenv
+from fontTools.subset import subset
 
 from sqlalchemy.testing.plugin.plugin_base import logging
 
@@ -82,7 +83,8 @@ def make_transposed_file_netrisk_casco(transposed : pd.DataFrame, other : dict) 
     other['price']['car_value'] = FORINT_TO_EUR * other['price']['car_value']
 
     geo_data_rename = {'latitude': 'Latitude', 'longitude': 'Longitude', 'postal_code': 'PostalCode'}
-    other['hungary_postal_codes'] = other['hungary_postal_codes'][['postal_code', 'latitude', 'longitude']]
+    other['hungary_postal_codes'] = (other['hungary_postal_codes'][['postal_code', 'latitude', 'longitude']]
+                                     .drop_duplicates(subset = ['postal_code']))
     other['hungary_postal_codes'] = other['hungary_postal_codes'].rename(columns=geo_data_rename)
 
     transposed['LicenseAge'] = transposed['LicenseAge'].astype(int) - transposed['Age'].astype(int)
@@ -135,16 +137,17 @@ def make_transposed_file_netrisk_casco(transposed : pd.DataFrame, other : dict) 
 
     transposed = pd.merge(pd.merge(transposed, other['full_trim_list'].drop_duplicates('full_name'), how='left', on='full_name'),
                           other['price'], how='left', on='eurotax_code')
-
-    print(other['hungary_postal_codes'])
     transposed = pd.merge(transposed, other['hungary_postal_codes'], on='PostalCode', how='left')
 
-    transposed['DeductiblePercentage'] = '10'
-    transposed['DeductibleAmount'] = '100e'
+    if 'DeductiblePercentage' not in transposed.columns:
+        transposed['DeductiblePercentage'] = '10'
+    if 'DeductibleAmount' not in transposed.columns:
+        transposed['DeductibleAmount'] = '100e'
 
     transposed['DeductiblePercentage'] = transposed['DeductiblePercentage'].apply(
         lambda x: (x.replace(' ', '').replace('%', ''))).astype(int)
-    transposed['DeductibleAmount'] = transposed['DeductibleAmount'].apply(lambda x: x.replace('e', '000'))
+    transposed['DeductibleAmount'] = transposed['DeductibleAmount'].apply(lambda x: x.replace('e', '000')
+                                                                          .replace('Ft', '').replace(' ', '')).astype(int)
 
     transposed['PostalCode2'] = transposed['PostalCode'].apply(lambda x: str(x)[: 2])
     transposed['PostalCode3'] = transposed['PostalCode'].apply(lambda x: str(x)[: 3])

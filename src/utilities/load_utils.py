@@ -6,9 +6,7 @@ import xgboost
 
 import pandas as pd
 from pathlib import Path
-from typing import Tuple
-
-from PIL.features import features
+from typing import Tuple, Dict, List
 
 from utilities.path_utils import *
 from utilities.files_utils import read_file
@@ -97,41 +95,56 @@ def choose_columns_specific_for_target_variable(data : pd.DataFrame, features : 
     return data.drop(columns = cut_cols_to_remove), features
 
 
+def load_data_name_reference(data_name_reference_path : Path, ) -> dict:
+    with open(data_name_reference_path, 'r') as file:
+        return json.load(file)
 
-def load_features(features_path : Path) -> tuple:
-    with open(features_path) as file:
-        features = file.readlines()
-        features = [feature.replace('\n', '') for feature in features]
-        feature_dtypes = {feature.split(' :: ')[0]: feature.split(' :: ')[1] for feature in features}
-        features = [feature.split(' :: ')[0] for feature in features]
-    FEATURES_TO_IGNORE = ['DateCrawled']
-    features = [feature for feature in features if feature not in FEATURES_TO_IGNORE]
-    return features, feature_dtypes
 
-def load_data(data_path: Path, features_path: Path, target_variable: str = None, apply_feature_dtypes: bool = True,
-              drop_target_na=True) -> Tuple[pd.DataFrame, list]:
+def reconstruct_features_model(features_model_dict: Dict[str, Dict[str, str]]) -> List[str]:
+    reconstructed_features = []
+
+    for col, props in features_model_dict.items():
+        if "dummy_values" in props:
+            dummy_values = props["dummy_values"].split('#')
+            for val in dummy_values:
+                dummy_column = f"{col}__{val}__dummy"
+                reconstructed_features.append(dummy_column)
+        else:
+            reconstructed_features.append(col)
+
+    return reconstructed_features
+
+
+def load_data(data_path: Path, target_variable: str = None,
+              drop_target_na=True) -> Tuple[pd.DataFrame, list, list, list]:
+
     data = read_file(data_path)
     logging.info("Imported data...")
 
-    features, feature_dtypes = load_features(features_path)
+    data_name = data_path.stem.replace('_processed', '')
+
     logging.info("Imported feature data...")
 
-    if apply_feature_dtypes:
-        data = apply_features(data, features, feature_dtypes)
+    data_name_reference_path = get_data_name_references_path()
+    data_name_reference = load_data_name_reference(data_name_reference_path)
+    if data_name_reference is not None and data_name in data_name_reference.keys():
+        data_info = data_name_reference[data_name]
+    else:
+        raise Exception('Data is not in the data name reference, something went wrong, please regenerate the data')
+
+    features_info = data_info['features_info']
+    features_on_top = data_info['features_on_top']
+    features_model = reconstruct_features_model(data_info['features_model'])
 
     if target_variable is not None:
-        data, features = choose_columns_specific_for_target_variable(data, features, target_variable)
-
-    columns = features
-
-    if target_variable is None:
-        data = data[columns]
-    else:
-        data = data[columns + [target_variable]]
+        data, features_model = choose_columns_specific_for_target_variable(data, features_model, target_variable)
+        data = data[features_info + features_on_top + features_model + [target_variable]]
         if drop_target_na:
             data = data.dropna(subset=[target_variable])
 
-    return data, features
+    return data, features_info, features_on_top, features_model
+
+
 
 
 def load_model(model_path: Path) -> xgboost.Booster:

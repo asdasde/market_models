@@ -208,7 +208,7 @@ def make_variations_for_feature(base_profile: pd.Series, feature: str | tuple, v
     return pd.DataFrame(profiles)
 
 
-def make_incremnetal_data_util(base_profile: pd.Series, value_set: pd.DataFrame) -> pd.DataFrame:
+def make_incremental_data_util(base_profile: pd.Series, value_set: pd.DataFrame) -> pd.DataFrame:
     profiles = []
 
     for _, row in value_set.iterrows():
@@ -249,13 +249,13 @@ def load_incremental_profile_params(service: str, base_profile_v: str, values_v:
 @click.option('--values_v', default=None)
 def generate_incremnetal_data(service: str, base_profile_v: str, values_v: str) -> None:
     base_profile, values = load_incremental_profile_params(service, base_profile_v, values_v)
-    incremnetal_data = make_incremnetal_data_util(base_profile, values)
-    incremnetal_data_name = get_incremental_data_name(service, base_profile_v, values_v)
-    incremnetal_data_dir = get_profiles_for_crawling_dir(incremnetal_data_name)
-    prepare_dir(incremnetal_data_dir)
-    incremnetal_data_path = get_profiles_for_crawling_transposed(incremnetal_data_name)
-    incremnetal_data.to_csv(Path(incremnetal_data_path))
-    logging.info(f"Exported sampled data to {incremnetal_data_path}")
+    incremental_data = make_incremental_data_util(base_profile, values)
+    incremental_data_name = get_incremental_data_name(service, base_profile_v, values_v)
+    incremental_data_dir = get_profiles_for_crawling_dir(incremental_data_name)
+    prepare_dir(incremental_data_dir)
+    incremental_data_path = get_profiles_for_crawling_transposed(incremental_data_name)
+    incremental_data.to_csv(Path(incremental_data_path))
+    logging.info(f"Exported sampled data to {incremental_data_path}")
 
 @click.command(name='sample_crawling_data')
 @click.option('--error_model_name', type=click.STRING)
@@ -316,7 +316,6 @@ def export_profile(profile: pd.DataFrame, template: pd.DataFrame, indices: dict,
 @click.option("--data_name", required=True, type=click.STRING, help='Data name (example incremental_data_base_profile_v1_values_v2')
 @click.option('--template_date', required=True, type=click.STRING, help='Date in the file name of the template')
 def export_data_for_crawling(service: str, data_name: str, template_date: str):
-
     profiles_export_path = get_profiles_for_crawling_dir(data_name)
     data_path = get_profiles_for_crawling_transposed(data_name)
     zip_path = get_profiles_for_crawling_zip_path(data_name)
@@ -340,18 +339,18 @@ def export_data_for_crawling(service: str, data_name: str, template_date: str):
         export_profile(data.iloc[i], template, indices, row_values, [], profiles_export_path)
         files_list.append(profiles_export_path / f"{i}.csv")
 
-    zip_list_of_files(files_list, Path(zip_path))
+    zip_list_of_files(files_list, zip_path)
     for file in files_list:
-        file.unlink()  # Use unlink() instead of os.remove
-    send_profiles_to_the_server(Path(zip_path), f"crawler-mocha/{data_name}/{data_name}.zip", get_remote_profiles_path(data_name))
+        file.unlink()
+    send_profiles_to_the_server(zip_path, get_remote_profiles_zip_path(data_name), get_remote_profiles_path(data_name))
 
-def send_profiles_to_the_server(local_zip_path: Path, remote_zip_path: str, remote_unzip_path: Path):
+def send_profiles_to_the_server(local_zip_path: Path, remote_zip_path: str, remote_unzip_path: str):
     try:
         ssh = paramiko.SSHClient()
 
         private_key = paramiko.RSAKey(filename=PRIVATE_KEY_PATH)
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(hostname=REMOTE_HOST_NAME, username='root', pkey=private_key, allow_agent=True, look_for_keys=True)
+        ssh.connect(hostname=REMOTE_SERVER_FOR_CRAWLING, username='root', pkey=private_key, allow_agent=True, look_for_keys=True)
 
         make_dir_command = f"mkdir {remote_unzip_path}"
         stdin, stdout, stderr = ssh.exec_command(make_dir_command)
@@ -375,7 +374,7 @@ def zip_and_fetch_profiles_from_the_server(remote_profiles_path, remote_zip_path
 
         private_key = paramiko.RSAKey(filename=PRIVATE_KEY_PATH)
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(hostname=REMOTE_HOST_NAME, username='root', pkey=private_key, allow_agent=True, look_for_keys=True)
+        ssh.connect(hostname=REMOTE_SERVER_FOR_CRAWLING, username='root', pkey=private_key, allow_agent=True, look_for_keys=True)
 
         zip_command = f"zip -jr {remote_zip_path} {remote_profiles_path}/*"
         stdin, stdout, stderr = ssh.exec_command(zip_command)
@@ -398,7 +397,7 @@ def run_crawler_script_on_server(num_processes: int, data_name: str):
 
         private_key = paramiko.RSAKey(filename=PRIVATE_KEY_PATH)
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(hostname=REMOTE_HOST_NAME, username='root', pkey=private_key, allow_agent=True, look_for_keys=True)
+        ssh.connect(hostname=REMOTE_SERVER_FOR_CRAWLING, username='root', pkey=private_key, allow_agent=True, look_for_keys=True)
         cd_command = f"cd {REMOTE_CRAWLER_DIRECTORY}"
         crawl_command = f"./crawl.sh -n {num_processes} -d {data_name}/"
         full_command = f"{cd_command} && {crawl_command}"

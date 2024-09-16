@@ -34,7 +34,7 @@ def get_model_directory(model_name: str) -> Path:
     return MODELS_PATH / model_name
 
 def get_model_path(model_name: str) -> Path:
-    return get_model_directory(model_name) / f'{model_name}netrisk_casco_transposed_config_2024_07_31.json'
+    return get_model_directory(model_name) / f'{model_name}.json'
 
 def get_model_hyperparameters_path(model_name: str) -> Path:
     return get_model_directory(model_name) / f'{model_name}_hyperparameters.json'
@@ -113,15 +113,19 @@ def get_profiles_after_crawling_zip_path(data_name: str) -> Path:
 def get_private_key_file_path() -> Path:
     return Path('../../../ssh_key')
 
-def get_remote_profiles_after_crawling_zip_path(data_name: str) -> Path:
-    return (REMOTE_CRAWLER_DIRECTORY / data_name / f'{data_name}_crawled.zip').as_posix()
-
-def get_remote_crawl_sh_path() -> Path:
+def get_remote_crawl_sh_path() -> str:
     return (REMOTE_CRAWLER_DIRECTORY / 'crawl.sh').as_posix()
 
-def get_remote_profiles_path(data_name: str) -> Path:
-    return (REMOTE_CRAWLER_DIRECTORY / data_name).as_posix()
 
-def get_remote_profiles_subdirectory_path(data_name: str) -> Path:
-    return (REMOTE_CRAWLER_DIRECTORY / data_name / 'profiles').as_posix()
+def get_remote_profiles_path(data_name: str) -> str:
+    return f'{REMOTE_CRAWLER_DIRECTORY}{data_name}/'
+
+def get_remote_profiles_zip_path(data_name : str) -> str:
+    return f"{get_remote_profiles_path(data_name)}{data_name}.zip"
+
+def get_remote_profiles_subdirectory_path(data_name: str) -> str:
+    return f'{get_remote_profiles_path(data_name)}profiles/'
+
+def get_remote_profiles_after_crawling_zip_path(data_name: str) -> str:
+    return f'{get_remote_profiles_path(data_name)}{data_name}_crawled.zip'
 
