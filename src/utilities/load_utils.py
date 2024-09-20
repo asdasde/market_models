@@ -1,5 +1,7 @@
 import glob
 import json
+import pickle
+
 import joblib
 import logging
 import xgboost
@@ -9,8 +11,15 @@ from pathlib import Path
 from typing import Tuple, Dict, List
 
 from utilities.path_utils import *
-from utilities.files_utils import read_file
+from utilities.files_utils import read_data_frame
 from utilities.constants import FEATURES_TO_IGNORE, BONUS_MALUS_CLASSES_DICT
+
+# TODO:
+# 1. Create a file (path_manager.py) to handle all object paths.
+# 2. Create a file (loader.py) to handle object loading using paths from path_manager.
+# 3. Create a file (exporter.py) to handle object exports.
+# 4. In the main code, use simple naming for objects, abstracting path, loading, and export logic.
+
 
 
 def load_lookups_table(lookups_table_path: Path) -> pd.DataFrame:
@@ -118,7 +127,7 @@ def reconstruct_features_model(features_model_dict: Dict[str, Dict[str, str]]) -
 def load_data(data_path: Path, target_variable: str = None,
               drop_target_na=True) -> Tuple[pd.DataFrame, list, list, list]:
 
-    data = read_file(data_path)
+    data = read_data_frame(data_path)
     logging.info("Imported data...")
 
     data_name = data_path.stem.replace('_processed', '')
@@ -135,13 +144,11 @@ def load_data(data_path: Path, target_variable: str = None,
     features_info = data_info['features_info']
     features_on_top = data_info['features_on_top']
     features_model = reconstruct_features_model(data_info['features_model'])
-
     if target_variable is not None:
         data, features_model = choose_columns_specific_for_target_variable(data, features_model, target_variable)
         data = data[features_info + features_on_top + features_model + [target_variable]]
         if drop_target_na:
             data = data.dropna(subset=[target_variable])
-
     return data, features_info, features_on_top, features_model
 
 
@@ -159,6 +166,12 @@ def load_out_of_sample_predictions(out_of_sample_predictions_path : Path, target
     out_of_sample_predictions = out_of_sample_predictions.set_index('id_case')
     out_of_sample_predictions = out_of_sample_predictions[target_variable]
     return out_of_sample_predictions
+
+def load_hyperopt_trials(model_name : str):
+    trials_path = get_model_trials_path(model_name)
+    with open(trials_path, 'rb') as file:
+        trials = pickle.load(file)
+    return trials
 
 def load_params(service: str, params_v: str) -> dict[str, pd.DataFrame]:
     params_path = get_params_path(service, params_v)
@@ -198,7 +211,7 @@ def reconstruct_categorical_variables(data : pd.DataFrame) -> pd.DataFrame:
 
     new_data = data.copy()
     for var, dummies in dummies_by_var.items():
-        var_col = pd.from_dummies(data[dummies].rename(columns={col: col.replace('__dummy', '').replace(f'{var}__', '') for col in dummies}))
+        var_col = pd.from_dummies(data[dummies].rename(columns={col: col.replace('__dummy', '').replace(f'{var}__', '') for col in dummies}), default_category=None)
         new_data[var] = var_col
         new_data = new_data.drop(columns=dummies)
     return new_data

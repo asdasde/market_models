@@ -1,3 +1,4 @@
+import pickle
 from pathlib import Path
 import csv
 import json
@@ -25,7 +26,7 @@ def detect_csv_delimiter(file_path: Path) -> str:
         return dialect.delimiter
 
 
-def read_file(file_path: Path) -> pd.DataFrame:
+def read_data_frame(file_path: Path) -> pd.DataFrame:
     file_path = Path(file_path)  # Ensure file_path is a Path object
     file_extension = file_path.suffix.lower()
     if file_extension == '.csv':
@@ -37,6 +38,8 @@ def read_file(file_path: Path) -> pd.DataFrame:
         return pd.read_excel(file_path)
     elif file_extension == '.json':
         return pd.read_json(file_path)
+    elif file_extension == '.parquet':
+        return pd.read_parquet(file_path)
     else:
         raise ValueError(f"Unsupported file format: {file_extension}")
 
@@ -68,3 +71,8 @@ def dict_to_json(dictionary: dict, output_path: Path):
     output_path = Path(output_path)  # Ensure output_path is a Path object
     with output_path.open('w') as f:
         json.dump(serializable_dict, f, indent=4)
+
+
+def save_trials(trials, trials_path):
+    with open(trials_path, 'wb') as f:
+        pickle.dump(trials, f)

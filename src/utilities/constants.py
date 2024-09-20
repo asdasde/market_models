@@ -30,13 +30,14 @@ NETRISK_CASCO_FEATURES_INFO = ['DateCrawled']
 FEATURES_TO_IGNORE = []
 DEFAULT_TARGET_VARIABLES = ['ALFA_price', 'ALLIANZ_price', 'GENERALI_price', 'GENERTEL_price',
                             'GROUPAMA_price', 'K&AMP;H_price', 'KÖBE_price', 'MAGYAR_price',
-                            'SIGNAL_price', 'UNION_price', 'UNIQA_price', 'WÁBERER_price']
+                            'SIGNAL_price', 'UNION_price', 'UNIQA_price', 'GRÁNIT_price']
 
 BONUS_MALUS_CLASSES_GOOD = ['B10', 'B09', 'B08', 'B07', 'B06', 'B05', 'B04', 'B03', 'B02', 'B01', 'A00', 'M01', 'M02',
                             'M03', 'M04']
 BONUS_MALUS_CLASSES_BAD = ['B10', 'B9', 'B8', 'B7', 'B6', 'B5', 'B4', 'B3', 'B2', 'B1', 'A0', 'M1', 'M2', 'M3', 'M4']
 
 BONUS_MALUS_CLASSES_DICT = dict(zip(BONUS_MALUS_CLASSES_BAD, BONUS_MALUS_CLASSES_GOOD))
+BONUS_MALUS_CLASSES_DICT_INV = dict(zip(BONUS_MALUS_CLASSES_GOOD, BONUS_MALUS_CLASSES_BAD))
 
 FORINT_TO_EUR = 0.0026
 

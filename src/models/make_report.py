@@ -6,10 +6,11 @@ from calendar import day_abbr
 import click
 import traceback
 
+import hyperopt
 import numpy as np
 import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
-from matplotlib.pyplot import xticks
+from matplotlib.pyplot import xticks, imread
 
 from matplotlib.ticker import PercentFormatter
 from dotenv import find_dotenv, load_dotenv
@@ -374,6 +375,9 @@ def plot_real_vs_predicted_by_feature(data_p: pd.DataFrame, predictions : pd.Ser
     if pd.api.types.is_datetime64_dtype(data[feature]):
         plot_real_vs_predicted_by_feature_date(data, feature, target_variable, report_resources_path)
 
+    if pd.api.types.is_categorical_dtype(data[feature]):
+        return
+
     if pd.api.types.is_string_dtype(data[feature]):
         fig, axes, mean_values = plot_real_vs_predicted_by_feature_other(data, feature, target_variable)
 
@@ -415,6 +419,26 @@ def k_largest_errors(data: pd.DataFrame, errors: pd.Series, k: int, report_resou
     table.auto_set_column_width(col=list(range(len(k_largest_errors_style.data.columns))))
     output_path = report_resources_path / f"05_{k}_largest_errors.jpg"
     plt.savefig(output_path, bbox_inches='tight', dpi=200)
+    plt.close()
+
+
+def plot_learning_curve(trials, report_resources_path: Path) -> None:
+    losses = [x['result']['loss'] for x in trials.trials]
+
+    best_losses = [min(losses[:i + 1]) for i in range(len(losses))]
+
+    # Plot the errors
+    plt.figure(figsize=(10, 6))
+    plt.plot(best_losses, label="Best Error", color='blue')
+    plt.plot(losses, label="Current Error", color='orange', alpha=0.5)
+    plt.xlabel('Trials')
+    plt.ylabel('Error')
+    plt.title('Training Error Over Time')
+    plt.legend()
+    plt.grid(True)
+
+    # Save the plot
+    plt.savefig(report_resources_path / "11_learning_curve.jpg", bbox_inches='tight')
     plt.close()
 
 
@@ -476,7 +500,7 @@ def generate_report_cover_image(report_resources_path: Path, insurance_name: str
 
 
 def generate_report_util(model: xgboost.Booster, data: pd.DataFrame, features: list, target_variable: str,
-                         out_of_sample_predictions: pd.Series, report_path: Path, report_resources_path: Path,
+                         out_of_sample_predictions: pd.Series, trials : hyperopt.Trials, report_path: Path, report_resources_path: Path,
                          skip_pdp: bool = False):
 
     data = reconstruct_categorical_variables(data)
@@ -539,6 +563,9 @@ def generate_report_util(model: xgboost.Booster, data: pd.DataFrame, features: l
         plot_real_vs_predicted_by_feature(data, out_of_sample_predictions, feature, target_variable,
                                                     report_resources_path)
 
+    plot_learning_curve(trials, report_resources_path)
+
+
     logging.info("Generating PDF report.")
     make_pdf(report_resources_path, report_path / "report.pdf")
     logging.info("Report generation completed.")
@@ -560,8 +587,8 @@ def generate_report(data_name: str, target_variable: str, skip_pdp: bool):
     data, features_info, features_on_top, features_model = load_data(data_path, target_variable)
     model = load_model(model_path)
     out_of_sample_predictions = load_out_of_sample_predictions(out_of_sample_predictions_path, target_variable)
-
-    generate_report_util(model, data, features_model, target_variable, out_of_sample_predictions, report_path,
+    model_trials = load_hyperopt_trials(model_name)
+    generate_report_util(model, data, features_model, target_variable, out_of_sample_predictions, model_trials, report_path,
                          report_resources_path, skip_pdp)
 
 

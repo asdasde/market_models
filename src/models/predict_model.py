@@ -29,6 +29,7 @@ def predict_all_models(data : pd.DataFrame, train_data_name : str, apply_presenc
         presence_model_path = get_model_path(presence_model_name)
         model = load_model(model_path)
         print(model_path)
+
         if (model is None) or (not is_compatible(model, data)):
             print('skipped ', target_variable, 'no model' if model is None else 'not compatible')
             continue
@@ -76,9 +77,9 @@ def model_predict(data_name: str, all_models: bool, train_data_name : str, model
         print(data[predictions_all_models.keys()])
         print(data.index)
 
-        predictions_path = get_predictions_all_path(data_name)
+        predictions_path = get_predictions_all_path(data_name, train_data_name)
         logging.info(f"Exported predictions to {predictions_path}.")
-        data.to_csv(predictions_path)
+        data.to_parquet(predictions_path)
     else:
         model_path = get_model_path(model_name)
 

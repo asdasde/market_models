@@ -327,8 +327,8 @@ def export_data_for_crawling(service: str, data_name: str, template_date: str):
         logging.info("Aborting ...")
         return
 
-    data = read_file(data_path)
-    template = read_file(template_path)
+    data = read_data_frame(data_path)
+    template = read_data_frame(template_path)
 
     with open(row_values_path, 'r') as row_values:
         row_values = eval(' '.join(row_values.readlines()))

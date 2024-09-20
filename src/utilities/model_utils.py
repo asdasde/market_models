@@ -20,6 +20,7 @@ def get_expected_features(model: xgboost.Booster):
 
 def is_compatible(model: xgboost.Booster, data: pd.DataFrame):
     expected_features = get_expected_features(model)
+    print(set(expected_features).difference(data.columns))
     return set(expected_features).issubset(data.columns)
 
 

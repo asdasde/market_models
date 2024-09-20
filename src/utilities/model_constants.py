@@ -6,7 +6,7 @@ TEST_SIZE = 0.1
 RANDOM_STATE = 42
 ERROR_MODEL_CLASSIFICATION_THRESHOLD = 0.8
 PRESENCE_MODEL_CLASSIFICATION_THRESHOLD = 0.5
-MAX_EVALS = 2
+MAX_EVALS = 50
 
 DEFAULT_PARAMS_REGRESSION = {
     'objective': 'reg:squarederror',
@@ -44,7 +44,7 @@ DEFAULT_PARAMS_CLASSIFICATION = {
 
 SPACE_REGRESSION = {
     'learning_rate': hp.uniform('learning_rate', 0.01, 0.3),
-    'n_estimators': hp.choice('n_estimators', np.arange(100, 1300, 100, dtype=int)),
+    'n_estimators': hp.choice('n_estimators', np.arange(100, 1600, 50, dtype=int)),
     'max_depth': hp.choice('max_depth', np.arange(2, 11, dtype=int)),
     'min_child_weight': hp.choice('min_child_weight', np.arange(1, 11, dtype=int)),
     'subsample': hp.uniform('subsample', 0.5, 1),

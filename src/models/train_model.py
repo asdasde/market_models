@@ -1,5 +1,7 @@
 import os
 import sys
+from copyreg import pickle
+
 import click
 
 from pathlib import Path
@@ -187,7 +189,7 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
         params = space.copy()
         loss = kFoldCrossValidation(k=3, data=data, features=features, target_variable=target_variable,
                                     is_classification=is_classification, param=params, debug=False)
-        return {"loss": loss[0 if is_classification else 2], 'status': STATUS_OK}
+        return {"loss": loss[0 if is_classification else 0], 'status': STATUS_OK}
 
     logging.info("Starting hyper-parameter tuning...")
 
@@ -203,22 +205,24 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
                             trials=trials,
                             return_argmin=False)
 
+
     model = model_train(data, data, features, target_variable, is_classification, best_hyperparams)
     logging.info("Finished hyper-parameter tuning...")
 
     res = kFoldCrossValidation(k=3, data=data, features=features, target_variable=target_variable,
                                is_classification=is_classification, param=best_hyperparams, debug=True)
 
-    return model, best_hyperparams, res[-1]
+    return model, best_hyperparams, res[-1], trials
 
 
 
 
-def export_model(model: xgboost.Booster, hyperparameters: dict, out_of_sample_predictions: pd.Series, model_path: Path,
-                 hyperparameters_path: Path, out_of_sample_predictions_path: Path) -> None:
+def export_model(model: xgboost.Booster, hyperparameters: dict, out_of_sample_predictions: pd.Series, trials : Trials, model_path: Path,
+                 hyperparameters_path: Path, out_of_sample_predictions_path: Path, trials_path : Path) -> None:
     model.save_model(model_path)
     dict_to_json(hyperparameters, hyperparameters_path)
     out_of_sample_predictions.to_csv(out_of_sample_predictions_path)
+    save_trials(trials, trials_path)
 
 
 @click.command(name='train_model')
@@ -231,17 +235,19 @@ def train_model(data_name, target_variable):
     model_path = get_model_path(model_name)
     hyperparameters_path = get_model_hyperparameters_path(model_name)
     out_of_sample_predictions_path = get_model_cv_out_of_sample_predictions_path(model_name)
+    trials_path = get_model_trials_path(model_name)
     report_path = get_report_path(model_name)
     report_resources_path = get_report_resource_path(model_name)
 
     prepare_dir(get_model_directory(model_name))
     data, features_info, features_on_top, features_model = load_data(data_path, target_variable)
-    model, hyperparameters, out_of_sample_predictions = train_model_util(data, features_model, target_variable, False)
+    model, hyperparameters, out_of_sample_predictions, trials = train_model_util(data, features_model, target_variable, False)
 
-    export_model(model, hyperparameters, out_of_sample_predictions, model_path, hyperparameters_path,
-                 out_of_sample_predictions_path)
+    export_model(model, hyperparameters, out_of_sample_predictions, trials, model_path, hyperparameters_path,
+                 out_of_sample_predictions_path, trials_path)
 
-    make_report.generate_report_util(model, data[features_model + [target_variable]], features_model, target_variable, out_of_sample_predictions, report_path,
+    make_report.generate_report_util(model, data[features_model + [target_variable]], features_model, target_variable,
+                                     out_of_sample_predictions, trials, report_path,
                                      report_resources_path, skip_pdp = True)
 
 

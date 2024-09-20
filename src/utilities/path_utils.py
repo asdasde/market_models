@@ -3,17 +3,17 @@ from utilities.path_constants import *
 from utilities.constants import column_to_folder_mapping
 from datetime import datetime
 
-def get_raw_data_path(data_name: str) -> Path:
-    return RAW_DATA_PATH / f'{data_name}.csv'
+def get_raw_data_path(data_name: str, extension = '.csv') -> Path:
+    return RAW_DATA_PATH / f'{data_name}{extension}'
 
 def get_processed_data_path(data_name: str) -> Path:
-    return PROCESSED_DATA_PATH / f'{data_name}_processed.csv'
+    return PROCESSED_DATA_PATH / f'{data_name}_processed.parquet'
 
 def get_interim_data_path(data_name: str) -> Path:
     return INTERIM_DATA_PATH / f'{data_name}_before_crawling.csv'
 
-def get_predictions_all_path(data_name: str) -> Path:
-    return PREDICTIONS_PATH / f'{data_name}_all_predictions.csv'
+def get_predictions_all_path(data_name: str, train_data_name : str) -> Path:
+    return PREDICTIONS_PATH / f'{data_name}_via_{train_data_name}_all_predictions.parquet'
 
 def get_predictions_path(data_name: str, model_name: str) -> Path:
     return PREDICTIONS_PATH / f'{data_name}__{model_name}.csv'
@@ -41,6 +41,9 @@ def get_model_hyperparameters_path(model_name: str) -> Path:
 
 def get_model_cv_out_of_sample_predictions_path(model_name: str) -> Path:
     return get_model_directory(model_name) / f'{model_name}_cv_out_of_sample_predictions.csv'
+
+def get_model_trials_path(model_name : str) -> Path:
+    return get_model_directory(model_name) / f'{model_name}_hyperopt_trials.pkl'
 
 def get_params_path(service: str, params_v: str) -> Path:
     return DISTRIBUTION_PATH / service / 'params' / params_v
