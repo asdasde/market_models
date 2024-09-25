@@ -72,7 +72,3 @@ def dict_to_json(dictionary: dict, output_path: Path):
     with output_path.open('w') as f:
         json.dump(serializable_dict, f, indent=4)
 
-
-def save_trials(trials, trials_path):
-    with open(trials_path, 'wb') as f:
-        pickle.dump(trials, f)

@@ -93,6 +93,51 @@ def get_report_path(model_name: str) -> Path:
 def get_report_resource_path(model_name: str) -> Path:
     return REPORTS_PATH / model_name / 'resources'
 
+from pathlib import Path
+
+def get_report_data_overview_path(report_resources_path: Path, idx) -> Path:
+    return report_resources_path / f"{idx:02d}_data_overview.jpg"
+
+
+def get_report_feature_distribution_path(report_resources_path: Path, feature : str, idx) -> Path:
+    return report_resources_path / f"{idx:02d}_distribution_{feature}.jpg"
+
+def get_report_error_overview_path(report_resources_path: Path, idx) -> Path:
+    return report_resources_path / f"{idx:02d}_error_overview.jpg"
+
+def get_report_error_quantiles_path(report_resources_path: Path, idx) -> Path:
+    return report_resources_path / f"{idx:02d}_error_quantiles.jpg"
+
+def get_report_error_percentage_distribution_path(report_resources_path: Path, idx) -> Path:
+    return report_resources_path / f"{idx:02d}_hist_error_percentage.jpg"
+
+def get_report_top_k_largest_errors_path(report_resources_path: Path, idx) -> Path:
+    return report_resources_path / f"{idx:02d}_top_k_largest_errors.jpg"
+
+def get_report_feature_importance_path(report_resources_path: Path, kind: str, idx) -> Path:
+    return report_resources_path / f"{idx:02d}_feature_importance_{kind}.jpg"
+
+def get_report_partial_dependence_plot_path(report_resources_path: Path, feature: str, idx) -> Path:
+    return report_resources_path / f"{idx:02d}_pdp_{feature}.jpg"
+
+def get_report_real_vs_predicted_quantiles_path(report_resources_path: Path, idx) -> Path:
+    return report_resources_path / f"{idx:02d}_real_vs_predicted_quantiles.jpg"
+
+def get_report_real_vs_predicted_by_feature_path(report_resources_path: Path, feature: str, idx) -> Path:
+    return report_resources_path / f"{idx:02d}_a_real_vs_predicted_by_{feature}.jpg"
+
+def get_report_top_10_biggest_errors_by_feature_path(report_resources_path: Path, feature: str, idx) -> Path:
+    return report_resources_path / f"{idx:02d}_b_top_10_biggest_errors_by_{feature}.jpg"
+
+def get_report_k_largest_errors_path(report_resources_path: Path, k: int, idx) -> Path:
+    return report_resources_path / f"{idx:02d}_{k}_largest_errors.jpg"
+
+def get_report_learning_curve_path(report_resources_path: Path, idx) -> Path:
+    return report_resources_path / f"{idx:02d}_learning_curve.jpg"
+
+def get_report_cover_image_path(report_resources_path: Path, idx) -> Path:
+    return report_resources_path / f"{idx:02d}_report_cover_image.jpg"
+
 def get_data_name_references_path() -> Path:
     return REFERENCES_PATH / 'data_name_references.json'
 

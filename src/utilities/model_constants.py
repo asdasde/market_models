@@ -69,3 +69,17 @@ SPACE_CLASSIFICATION = {
     'reg_lambda': hp.uniform('reg_lambda', 0, 1),
     'seed': 0,
 }
+
+DEFAULT_REPORT_TABLE_OF_CONTENTS = [
+        "Data Overview",
+        "Error Overview",
+        "Error Quantiles",
+        "Error Percentage Distribution",
+        "Top k Largest Errors",
+        "Feature Importance",
+        "Feature Distribution",
+        "Partial Dependence Plots",
+        "Real vs Predicted Quantiles",
+        "Real vs Predicted Quantiles by Feature",
+    ]
+

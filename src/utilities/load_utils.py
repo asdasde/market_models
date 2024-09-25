@@ -7,12 +7,12 @@ import logging
 import xgboost
 
 import pandas as pd
-from pathlib import Path
 from typing import Tuple, Dict, List
+
+from xgboost import Booster
 
 from utilities.path_utils import *
 from utilities.files_utils import read_data_frame
-from utilities.constants import FEATURES_TO_IGNORE, BONUS_MALUS_CLASSES_DICT
 
 # TODO:
 # 1. Create a file (path_manager.py) to handle all object paths.
@@ -22,7 +22,8 @@ from utilities.constants import FEATURES_TO_IGNORE, BONUS_MALUS_CLASSES_DICT
 
 
 
-def load_lookups_table(lookups_table_path: Path) -> pd.DataFrame:
+def load_lookups_table(target_variable: str) -> pd.DataFrame:
+    lookups_table_path = get_mtpl_postal_categories_path(target_variable)
     lookups_table = pd.read_csv(lookups_table_path)
     lookups_table = lookups_table[lookups_table['title'].str.contains('territory', case=False)].drop_duplicates(
         subset=['value'])
@@ -31,8 +32,9 @@ def load_lookups_table(lookups_table_path: Path) -> pd.DataFrame:
     return lookups_table
 
 
-def load_lookups_default_value(default_values_path: Path):
+def load_lookups_default_value(target_variable: str):
     try:
+        default_values_path = get_mtpl_default_values_path(target_variable)
         default_value = pd.read_csv(default_values_path)
         return default_value[default_value['key'] == 'territory'].iloc[0]['value']
     except IndexError:
@@ -82,32 +84,20 @@ def encode_categorical_columns(values: pd.Series, feature: str) -> pd.Series:
         raise ValueError("Unknown encoder type")
 
 
-def apply_features(data: pd.DataFrame, features: list, feature_dtypes: dict) -> pd.DataFrame:
-    for feature in features:
-        if feature_dtypes[feature] == 'index':
-            data = data.set_index(feature)
-            features.remove(feature)
-            continue
-
-        if feature == 'BonusMalus':
-            data[feature] = data[feature].apply(lambda x: BONUS_MALUS_CLASSES_DICT.get(x, x))
-        data[feature] = data[feature].astype(feature_dtypes[feature])
-
-        if data[feature].dtype == 'category':
-            data[feature] = encode_categorical_columns(data[feature], feature)
-    return data
-
-
 def choose_columns_specific_for_target_variable(data : pd.DataFrame, features : list, target_variable : str) -> tuple:
     cut_cols_to_remove = [col for col in data.columns if target_variable not in col and 'cut' in col]
     features = [col for col in features if col not in cut_cols_to_remove]
     return data.drop(columns = cut_cols_to_remove), features
 
 
-def load_data_name_reference(data_name_reference_path : Path, ) -> dict:
-    with open(data_name_reference_path, 'r') as file:
-        return json.load(file)
-
+def load_data_name_reference() -> dict:
+    data_name_reference_path = get_data_name_references_path()
+    if os.path.exists(data_name_reference_path):
+        with open(data_name_reference_path, 'r') as json_file:
+            data_name_reference = json.load(json_file)
+    else:
+        data_name_reference = {}
+    return data_name_reference
 
 def reconstruct_features_model(features_model_dict: Dict[str, Dict[str, str]]) -> List[str]:
     reconstructed_features = []
@@ -124,20 +114,19 @@ def reconstruct_features_model(features_model_dict: Dict[str, Dict[str, str]]) -
     return reconstructed_features
 
 
-def load_data(data_path: Path, target_variable: str = None,
+def load_data(processed_data_name: str, target_variable: str = None,
               drop_target_na=True) -> Tuple[pd.DataFrame, list, list, list]:
+
+    data_path = get_processed_data_path(processed_data_name)
 
     data = read_data_frame(data_path)
     logging.info("Imported data...")
 
-    data_name = data_path.stem.replace('_processed', '')
-
     logging.info("Imported feature data...")
 
-    data_name_reference_path = get_data_name_references_path()
-    data_name_reference = load_data_name_reference(data_name_reference_path)
-    if data_name_reference is not None and data_name in data_name_reference.keys():
-        data_info = data_name_reference[data_name]
+    data_name_reference = load_data_name_reference()
+    if processed_data_name in data_name_reference.keys():
+        data_info = data_name_reference[processed_data_name]
     else:
         raise Exception('Data is not in the data name reference, something went wrong, please regenerate the data')
 
@@ -152,15 +141,24 @@ def load_data(data_path: Path, target_variable: str = None,
     return data, features_info, features_on_top, features_model
 
 
+def check_model_existence(model_name : str):
+    model_path = get_model_path(model_name)
+    return os.path.exists(model_path)
+
+def load_model(model_name : str) -> Booster | None:
+    if model_name is None:
+        model = None
+    else:
+        model_path = get_model_path(model_name)
+        try:
+            model = xgboost.Booster(model_file=str(model_path))
+        except Exception:
+            model = None
+    return model
 
 
-def load_model(model_path: Path) -> xgboost.Booster:
-    try:
-        return xgboost.Booster(model_file=str(model_path))
-    except Exception:
-        return None
-
-def load_out_of_sample_predictions(out_of_sample_predictions_path : Path, target_variable: str) -> pd.DataFrame:
+def load_out_of_sample_predictions(model_name : str, target_variable: str) -> pd.Series:
+    out_of_sample_predictions_path = get_model_cv_out_of_sample_predictions_path(model_name)
     out_of_sample_predictions = pd.read_csv(out_of_sample_predictions_path)
     out_of_sample_predictions.columns = ['id_case', target_variable]
     out_of_sample_predictions = out_of_sample_predictions.set_index('id_case')

@@ -25,10 +25,7 @@ def predict_all_models(data : pd.DataFrame, train_data_name : str, apply_presenc
         model_name = get_model_name(train_data_name, target_variable)
         presence_model_name = get_presence_model_name(train_data_name, target_variable)
 
-        model_path = get_model_path(model_name)
-        presence_model_path = get_model_path(presence_model_name)
-        model = load_model(model_path)
-        print(model_path)
+        model = load_model(model_name)
 
         if (model is None) or (not is_compatible(model, data)):
             print('skipped ', target_variable, 'no model' if model is None else 'not compatible')
@@ -37,7 +34,7 @@ def predict_all_models(data : pd.DataFrame, train_data_name : str, apply_presenc
         expected_features = get_expected_features(model)
         predictions = predict(model, data[expected_features])
 
-        presence_model = load_model(presence_model_path) if (apply_presence_models and os.path.exists(presence_model_path)) else None
+        presence_model = load_model(presence_model_name) if apply_presence_models else None
         if presence_model is not None:
             presence_predictions = apply_threshold(predict(presence_model, data[expected_features]), 0.5)
             predictions[~presence_predictions] = None
@@ -65,30 +62,18 @@ def validate_train_data_name(ctx, param, value):
 @click.option("--model_name", callback=validate_model_name, help="Name of the model to use for prediction.")
 def model_predict(data_name: str, all_models: bool, train_data_name : str, model_name: str):
 
-    data_path = get_processed_data_path(data_name)
-    features_path = get_features_path(data_name)
-
-    data, features_info, features_on_top, features_model = load_data(data_path)
+    data, features_info, features_on_top, features_model = load_data(data_name)
     if all_models:
         predictions_all_models = predict_all_models(data, train_data_name, apply_presence_models=True)
         for model_name, predictions in predictions_all_models.items():
             data[model_name] = predictions
 
-        print(data[predictions_all_models.keys()])
-        print(data.index)
-
         predictions_path = get_predictions_all_path(data_name, train_data_name)
         logging.info(f"Exported predictions to {predictions_path}.")
         data.to_parquet(predictions_path)
     else:
-        model_path = get_model_path(model_name)
-
-        if not model_path:
-            click.echo("Error: Please specify a model path.")
-            return
-
-        model = load_model(model_path)
-        if not is_compatible(model, data):
+        model = load_model(model_name)
+        if model is None or not is_compatible(model, data):
             click.echo("Error: Model and data are not compatible.")
             return
 

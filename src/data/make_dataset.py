@@ -21,6 +21,7 @@ from utilities.constants import *
 from utilities.model_utils import *
 from utilities.files_utils import *
 from utilities.load_utils import *
+from utilities.export_utils import *
 
 
 def range_to_list(x):
@@ -265,20 +266,15 @@ def generate_incremnetal_data(service: str, base_profile_v: str, values_v: str) 
 @click.option('--custom_name', default='', type=click.STRING, help='Use this if you want to have no generic name, this will append to genric name.')
 @click.option('--n', default=1000, type=click.INT, help='Number of profiles to sample.')
 def sample_crawling_data(error_model_name, service, params_v, policy_start_date, custom_name, n):
-    if error_model_name is None:
-        error_model = None
-    else:
-        error_model_path = get_model_path(error_model_name)
-        error_model = load_model(error_model_path)
+
+    error_model = load_model(error_model_name)
     logging.info("Loaded the error model.")
+
     params, others = load_distribution(service, params_v)
     logging.info("Loaded the distributions.")
+
     sampled_data = sample_profiles(n, params, others, policy_start_date, error_model)
-    sampled_data_name = get_sampled_data_name(service, params_v) + custom_name
-    prepare_dir(get_profiles_for_crawling_dir(sampled_data_name))
-    sampled_data_path = get_profiles_for_crawling_transposed(sampled_data_name)
-    sampled_data.to_csv(Path(sampled_data_path))
-    logging.info(f"Exported sampled data to {sampled_data_path}")
+    export_sampled_data(sampled_data, service, params_v, custom_name)
 
 def replace_iii(row):
     val = row['value']

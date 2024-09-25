@@ -1,36 +1,32 @@
-import math
 import os
 import sys
-from calendar import day_abbr
-
 import click
-import traceback
-
-import hyperopt
-import numpy as np
-import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
-from matplotlib.pyplot import xticks, imread
+from hyperopt import Trials
 
 from matplotlib.ticker import PercentFormatter
-from dotenv import find_dotenv, load_dotenv
-from pathlib import Path
-from matplotlib.colors import Normalize
 import matplotlib.pyplot as plt
 import seaborn as sns
+from pandas import CategoricalDtype
 
 from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error, mean_absolute_error
+
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utilities.constants import QUANTILE_RANGE
+from utilities.model_constants import DEFAULT_REPORT_TABLE_OF_CONTENTS
 from utilities.model_utils import *
 from utilities.files_utils import *
 from utilities.load_utils import *
+import warnings
 
+warnings.filterwarnings("ignore", category=UserWarning, module="matplotlib.category")
+warnings.filterwarnings("ignore", category=UserWarning, module="matplotlib.ticker")
 os.environ["QT_QPA_PLATFORM"] = "wayland"
 
 
-def make_data_overview(data: pd.DataFrame, report_resources_path: Path) -> None:
+def make_data_overview(data: pd.DataFrame, report_resources_path: Path, idx) -> None:
     unique = pd.DataFrame(data.nunique()).rename(columns={0: 'unique'}).T
     describe = pd.concat([data.describe().round(1), unique])
     describeStyle = describe.T.style.format(precision=2)
@@ -42,38 +38,48 @@ def make_data_overview(data: pd.DataFrame, report_resources_path: Path) -> None:
     table.set_fontsize(10)
     table.auto_set_column_width(col=list(range(len(describeStyle.data.columns))))
 
-    output_path = report_resources_path / "01_data_overview.jpg"
+    output_path = get_report_data_overview_path(report_resources_path, idx)
     plt.savefig(output_path, bbox_inches='tight', dpi=200)
     plt.close()
 
 
-def plot_feature_distribution(feature: pd.Series, report_resources_path: Path) -> None:
+
+
+def plot_feature_distribution(feature: pd.Series, report_resources_path: Path, idx: int) -> None:
+    if feature.dtype == 'object':
+        try:
+            feature = pd.to_numeric(feature, errors='coerce')
+        except ValueError:
+            pass
+
     plt.figure(figsize=(10, 6))
+
     if feature.dtype == 'bool' or feature.dtype == 'object':
-        sns.countplot(x=feature, stat = 'percent', width=0.3, order = feature.value_counts().index)
+        sns.countplot(x=feature, stat='percent', width=0.3, order=feature.value_counts().index)
         plt.xticks(rotation=90)
         plt.title(f'Distribution of {feature.name}')
-
     else:
-        if feature.dtype == 'object':
-            try:
-                feature = pd.to_numeric(feature, errors='coerce')
-            except ValueError:
-                pass
         sns.histplot(feature, bins=40, kde=False, stat='density', alpha=0.7)
         plt.title(f'Distribution of {feature.name}')
         plt.xlabel(str(feature.name))
         plt.ylabel('Percent of values')
         plt.gca().yaxis.set_major_formatter(PercentFormatter(1))
-        plt.locator_params(axis='x', nbins=20)
+
+        if pd.api.types.is_numeric_dtype(feature):
+            plt.locator_params(axis='x', nbins=20)
+
         plt.xticks(rotation=45, ha='right')
 
-    output_path = report_resources_path / f"07_distribution_{feature.name}.jpg"
+    output_path = get_report_feature_distribution_path(report_resources_path, str(feature.name), idx)
     plt.savefig(output_path, bbox_inches='tight')
     plt.close()
 
 
-def make_error_overview(actual: pd.Series, predicted: pd.Series, report_resources_path: Path) -> None:
+def get_report_feature_distribution_path(report_resources_path: Path, feature_name: str, idx: int) -> Path:
+    return report_resources_path / f"{idx:02d}_feature_distribution_{feature_name}.jpg"
+
+
+def make_error_overview(actual: pd.Series, predicted: pd.Series, report_resources_path: Path, idx : int) -> None:
     mae = mean_absolute_error(actual, predicted)
     maeP = mae / actual.mean() * 100
     mse = mean_squared_error(actual, predicted)
@@ -96,25 +102,25 @@ def make_error_overview(actual: pd.Series, predicted: pd.Series, report_resource
     table.set_fontsize(10)
     table.auto_set_column_width(col=list(range(len(reportStyle.data.columns))))
 
-    output_path = report_resources_path / "02_error_overview.jpg"
+    output_path = get_report_error_overview_path(report_resources_path, idx)
     plt.savefig(output_path, bbox_inches='tight', dpi=200)
     plt.close()
 
 
-def plot_hist_error_percentage(error: np.array, report_resources_path: Path) -> None:
+def plot_hist_error_percentage(error: np.array, report_resources_path: Path, idx : int) -> None:
     delta = max(abs(error.quantile(0.1)), error.quantile(0.9))
     hist_range = (-delta, delta)
     plt.hist(error, range=hist_range, bins=40, weights=np.ones(len(error)) / len(error))
     plt.xlabel('Error percentage')
     plt.ylabel('Percent of errors')
 
-    output_path = report_resources_path / "04_hist_error_percentage.jpg"
+    output_path = get_report_error_percentage_distribution_path(report_resources_path, idx)
     plt.savefig(output_path)
     plt.close()
 
 
 def make_error_quantiles(real: pd.Series, predicted: pd.Series, report_resources_path: Path,
-                         quantile_ranges: list = None) -> None:
+                         quantile_ranges: list, idx : int) -> None:
     quantile_ranges = QUANTILE_RANGE if quantile_ranges is None else quantile_ranges
     errors = real - predicted
     absolute_errors = errors.abs()
@@ -138,19 +144,19 @@ def make_error_quantiles(real: pd.Series, predicted: pd.Series, report_resources
     table.set_fontsize(10)
     table.auto_set_column_width(col=list(range(len(quantile_df_style.data.columns))))
 
-    output_path = report_resources_path / "03_error_quantiles.jpg"
+    output_path = get_report_error_quantiles_path(report_resources_path, idx)
     plt.savefig(output_path, bbox_inches='tight', dpi=200)
     plt.close()
 
 
-def partial_dependence_analysis(model: xgboost.Booster, data: pd.DataFrame, features: list, target_variable: str,
+def partial_dependence_analysis(model: xgboost.Booster, data: pd.DataFrame, features_model: list,
                                 grid_resolution: int = 100) -> tuple:
     importance_dict = {}
     pdp_dict = {}
-    for feature in features:
-        if feature in ['CarMake', 'CarModel']:
+    for feature in features_model:
+        if feature in ['CarMake', 'CarModel', 'vehicle_maker', 'vehicle_model', 'county', 'calculation_time']:
             continue
-        if data[feature].dtype == 'category':  # Check if the variable is categorical
+        if data[feature].dtype == 'category':
             feature_range = data[feature].unique()
         else:
             feature_range = np.linspace(data[feature].min(), data[feature].max(), grid_resolution)
@@ -158,7 +164,7 @@ def partial_dependence_analysis(model: xgboost.Booster, data: pd.DataFrame, feat
         for value in feature_range:
             data_copy = data.copy()
             data_copy[feature] = value
-            predictions = predict(model, data_copy[features])
+            predictions = predict(model, data_copy[features_model])
             partial_dependence_values.append(np.mean(predictions))
         importance_dict[feature] = np.std(partial_dependence_values)
         pdp_dict[feature] = (feature_range, partial_dependence_values)
@@ -182,11 +188,10 @@ def plot_pdp_importance(features: list, importances, title="Feature importance",
     return ax
 
 
-def plot_feature_importance_individual(importances_dict: dict, kind: str, export_path: Path) -> None:
-    # Convert dictionary to a pandas Series and prepare data
-    importances = pd.Series(importances_dict, name='feature_with_dummies').reset_index()
-    importances['feature'] = importances['index'].apply(lambda x: x.split('__')[0])
-    importance_summary = importances.groupby('feature')['feature_with_dummies'].sum()
+def plot_feature_importance_individual(importance_dict: dict, kind: str, report_resources_path: Path, idx : int) -> None:
+    importance = pd.Series(importance_dict, name='feature_with_dummies').reset_index()
+    importance['feature'] = importance['index'].apply(lambda x: x.split('__')[0])
+    importance_summary = importance.groupby('feature')['feature_with_dummies'].sum()
     importance_summary = importance_summary.sort_values(ascending=False)
     fig, ax = plt.subplots(figsize=(8, 6))
 
@@ -206,21 +211,22 @@ def plot_feature_importance_individual(importances_dict: dict, kind: str, export
 
     # Save the plot
     plt.tight_layout()
-    plt.savefig(export_path / f"06_feature_importance_{kind}.jpg", dpi=300)
+    output_path = get_report_feature_importance_path(report_resources_path, kind, idx)
+    plt.savefig(output_path, dpi=300)
     plt.close()
 
-def plot_feature_importance(model: xgboost.Booster, importances: dict, report_resources_path: Path):
+def plot_feature_importance(model: xgboost.Booster, importances: dict, report_resources_path: Path, idx : int):
     export_path = report_resources_path
 
     for kind in ['weight', 'gain', 'cover']:
-        plot_feature_importance_individual(model.get_score(importance_type=kind), kind, export_path)
+        plot_feature_importance_individual(model.get_score(importance_type=kind), kind, export_path, idx)
 
     if importances is not None:
         plot_pdp_importance(list(importances.keys()), list(importances.values()),
                             save_path=export_path  / f"06_feature_importance_pdp.jpg")
 
 
-def plot_pdps(features: list, pdp_dict: dict, report_resources_path: Path):
+def plot_pdps(features: list, pdp_dict: dict, report_resources_path: Path, idx : int):
     for feature in features:
         if feature in ['CarMake', 'CarModel']:
             continue
@@ -230,7 +236,8 @@ def plot_pdps(features: list, pdp_dict: dict, report_resources_path: Path):
         plt.ylabel('Partial Dependence')
         plt.title('Partial Dependence Plots for Selected Features')
         plt.legend()
-        plt.savefig(report_resources_path / f"08_pdp_{feature}.jpg")
+        output_path = get_report_partial_dependence_plot_path(report_resources_path, feature, idx)
+        plt.savefig(output_path)
         plt.close()
 
 
@@ -238,7 +245,7 @@ def getQauntSplit(step=50):
     return [i / 1000 for i in range(0, 1001, step)]
 
 
-def plot_real_vs_predicted_quantiles(real: pd.Series, predicted: pd.Series, report_resources_path: Path) -> None:
+def plot_real_vs_predicted_quantiles(real: pd.Series, predicted: pd.Series, report_resources_path: Path, idx) -> None:
     step = (100000 // len(real))
     quant = getQauntSplit(step)
     qr = np.quantile(real, quant)
@@ -248,7 +255,8 @@ def plot_real_vs_predicted_quantiles(real: pd.Series, predicted: pd.Series, repo
     plt.plot(x, x, c='r')
     plt.xlabel('Real quantiles for training data')
     plt.ylabel('Predicted quantiles for training data')
-    plt.savefig(report_resources_path / "09_real_vs_predicted_quantiles.jpg", bbox_inches='tight')
+    output_path = get_report_real_vs_predicted_quantiles_path(report_resources_path, idx)
+    plt.savefig(output_path, bbox_inches='tight')
     plt.close()
 
 
@@ -327,10 +335,7 @@ def plot_real_vs_predicted_by_feature_numeric(data: pd.DataFrame, feature: str,
     plt.tight_layout()
     return fig, axes, mean_values
 
-def plot_real_vs_predicted_by_feature_date(data: pd.DataFrame, feature: str,
-                                                target_variable: str, report_resources_path: Path,
-                                                num_quantiles: int = 20):
-    pass
+
 
 def plot_real_vs_predicted_by_feature_other(data: pd.DataFrame, feature: str,
                                             target_variable: str) -> Tuple[plt.Figure, np.ndarray, pd.DataFrame]:
@@ -360,7 +365,7 @@ def plot_real_vs_predicted_by_feature_other(data: pd.DataFrame, feature: str,
 
 
 def plot_real_vs_predicted_by_feature(data_p: pd.DataFrame, predictions : pd.Series, feature: str,
-                                      target_variable: str, report_resources_path: Path):
+                                      target_variable: str, report_resources_path: Path, idx : int):
 
     data = data_p[[feature, target_variable]].copy()
 
@@ -372,10 +377,7 @@ def plot_real_vs_predicted_by_feature(data_p: pd.DataFrame, predictions : pd.Ser
     if pd.api.types.is_numeric_dtype(data[feature]):
         fig, axes, mean_values = plot_real_vs_predicted_by_feature_numeric(data, feature, target_variable)
 
-    if pd.api.types.is_datetime64_dtype(data[feature]):
-        plot_real_vs_predicted_by_feature_date(data, feature, target_variable, report_resources_path)
-
-    if pd.api.types.is_categorical_dtype(data[feature]):
+    if isinstance(data[feature].dtype, CategoricalDtype):
         return
 
     if pd.api.types.is_string_dtype(data[feature]):
@@ -384,7 +386,7 @@ def plot_real_vs_predicted_by_feature(data_p: pd.DataFrame, predictions : pd.Ser
     if fig is None:
         return
 
-    output_path = report_resources_path / f"10_real_vs_predicted_by_{feature}_a.jpg"
+    output_path = get_report_real_vs_predicted_by_feature_path(report_resources_path, feature, idx)
     fig.savefig(output_path)
     plt.close(fig)
 
@@ -399,11 +401,11 @@ def plot_real_vs_predicted_by_feature(data_p: pd.DataFrame, predictions : pd.Ser
     ax.set_title(f'Segments with top error for {feature}')
     table = ax.table(cellText=top_errors.values, colLabels=top_errors.columns, cellLoc='center', loc='center')
 
-    output_path = report_resources_path / f"10_top_10_biggest_errors_by_{feature}_b.jpg"
+    output_path = get_report_top_10_biggest_errors_by_feature_path(report_resources_path, feature, idx)
     plt.savefig(output_path, dpi = 150)
     plt.close()
 
-def k_largest_errors(data: pd.DataFrame, errors: pd.Series, k: int, report_resources_path: Path):
+def get_k_largest_errors(data: pd.DataFrame, errors: pd.Series, k: int, report_resources_path: Path, idx : int):
     dc = data.copy()
     dc['abs_error'] = abs(errors)
 
@@ -417,12 +419,12 @@ def k_largest_errors(data: pd.DataFrame, errors: pd.Series, k: int, report_resou
     table.auto_set_font_size(False)
     table.set_fontsize(10)
     table.auto_set_column_width(col=list(range(len(k_largest_errors_style.data.columns))))
-    output_path = report_resources_path / f"05_{k}_largest_errors.jpg"
+    output_path = get_report_k_largest_errors_path(report_resources_path, k, idx)
     plt.savefig(output_path, bbox_inches='tight', dpi=200)
     plt.close()
 
 
-def plot_learning_curve(trials, report_resources_path: Path) -> None:
+def plot_learning_curve(trials : Trials, report_resources_path: Path, idx : int) -> None:
     losses = [x['result']['loss'] for x in trials.trials]
 
     best_losses = [min(losses[:i + 1]) for i in range(len(losses))]
@@ -437,8 +439,8 @@ def plot_learning_curve(trials, report_resources_path: Path) -> None:
     plt.legend()
     plt.grid(True)
 
-    # Save the plot
-    plt.savefig(report_resources_path / "11_learning_curve.jpg", bbox_inches='tight')
+    output_path = get_report_learning_curve_path(report_resources_path, idx)
+    plt.savefig(output_path, bbox_inches='tight')
     plt.close()
 
 
@@ -499,77 +501,73 @@ def generate_report_cover_image(report_resources_path: Path, insurance_name: str
     return output_path
 
 
-def generate_report_util(model: xgboost.Booster, data: pd.DataFrame, features: list, target_variable: str,
-                         out_of_sample_predictions: pd.Series, trials : hyperopt.Trials, report_path: Path, report_resources_path: Path,
-                         skip_pdp: bool = False):
 
+
+
+def generate_report_util(
+        model: xgboost.Booster,
+        data: pd.DataFrame,
+        features_info: list,
+        features_model : list,
+        target_variable: str,
+        out_of_sample_predictions: pd.Series,
+        trials: Trials,
+        report_path: Path,
+        report_resources_path: Path,
+        skip_pdp: bool = False,
+
+):
     data = reconstruct_categorical_variables(data)
-    features = data.columns.difference([target_variable])
+    features_all = features_model + features_info
+
+    real = data[target_variable]
+    errors = real - out_of_sample_predictions
+    errors_percentage = errors / data[target_variable] * 100
 
     logging.info("Preparing directories for the report.")
     prepare_dir(report_path)
     prepare_dir(report_resources_path)
 
-    table_of_contents = [
-        "Data Overview", "Error Overview", "Error Quantiles", "Error Percentage Distribution",
-        "Top k Largest Errors", "Feature Importance", "Feature Distribution",
-        "Partial Dependence Plots", "Real vs Predicted Quantiles", "Real vs Predicted Quantiles by Feature",
-    ]
+
+
+    table_of_contents = DEFAULT_REPORT_TABLE_OF_CONTENTS
 
     logging.info("Generating report cover image.")
     generate_report_cover_image(report_resources_path, target_variable, table_of_contents)
 
-    logging.info("Creating data overview.")
-    make_data_overview(data, report_resources_path)
-    real = data[target_variable]
-    errors = real - out_of_sample_predictions
-    errors_percentage = errors / data[target_variable] * 100
-
-    logging.info("Making error overview")
-    make_error_overview(real, out_of_sample_predictions, report_resources_path)
-
-    logging.info("Making error quantiles.")
-    make_error_quantiles(real, out_of_sample_predictions, report_resources_path)
-
-    logging.info("Plotting error percentage distribution.")
-    plot_hist_error_percentage(errors_percentage, report_resources_path)
-
-    logging.info("Finding k largest errors.")
-    k_largest_errors(data, errors, 10, report_resources_path)
-
-    pdp_dict = None
-    importance = None
     if not skip_pdp:
-        logging.info("Performing partial dependence analysis.")
-        pdp_dict, importance = partial_dependence_analysis(model, data, features, target_variable, grid_resolution=20)
+        pdp_dict, importance = partial_dependence_analysis(model, data, features_model)
 
-    logging.info("Plotting feature importance.")
-    plot_feature_importance(model, importance, report_resources_path)
+    section_functions = {
+        "Data Overview": lambda idx: make_data_overview(data, report_resources_path, idx),
+        "Error Overview": lambda idx: make_error_overview(real, out_of_sample_predictions, report_resources_path, idx),
+        "Error Quantiles": lambda idx: make_error_quantiles(real, out_of_sample_predictions, report_resources_path,
+                                                            None, idx),
+        "Error Percentage Distribution": lambda idx: plot_hist_error_percentage(errors_percentage,
+                                                                                report_resources_path, idx),
+        "Top k Largest Errors": lambda idx: get_k_largest_errors(data, errors, 10, report_resources_path, idx),
+        "Feature Importance": lambda idx: plot_feature_importance(model, importance,
+                                                                  report_resources_path, idx) if not skip_pdp else None,
+        "Feature Distribution": lambda idx: [plot_feature_distribution(data[feature], report_resources_path, idx) for
+                                             feature in features_all],
+        "Partial Dependence Plots": lambda idx: plot_pdps(features_model, pdp_dict, report_resources_path,
+                                                          idx) if not skip_pdp else None,
+        "Real vs Predicted Quantiles": lambda idx: plot_real_vs_predicted_quantiles(real, out_of_sample_predictions,
+                                                                                    report_resources_path, idx),
+        "Real vs Predicted Quantiles by Feature": lambda idx: [
+            plot_real_vs_predicted_by_feature(data, out_of_sample_predictions, feature, target_variable,
+                                              report_resources_path, idx) for feature in features_all],
+        "Learning Curve": lambda idx: plot_learning_curve(trials, report_resources_path, idx),
+    }
 
-    logging.info("Plotting feature distributions.")
-    for feature in features:
-        plot_feature_distribution(data[feature], report_resources_path)
-
-    if not skip_pdp:
-        logging.info("Plotting partial dependence plots.")
-        plot_pdps(features, pdp_dict, report_resources_path)
-
-    logging.info("Plotting real vs predicted quantiles.")
-    plot_real_vs_predicted_quantiles(real, out_of_sample_predictions, report_resources_path)
-
-    logging.info("Plotting real vs predicted quantiles by feature.")
-
-    for feature in features:
-        plot_real_vs_predicted_by_feature(data, out_of_sample_predictions, feature, target_variable,
-                                                    report_resources_path)
-
-    plot_learning_curve(trials, report_resources_path)
-
+    for section_id, section in enumerate(table_of_contents, start=1):
+        logging.info(f"Generating section: {section}")
+        if section in section_functions:
+            section_functions[section](section_id)
 
     logging.info("Generating PDF report.")
     make_pdf(report_resources_path, report_path / "report.pdf")
     logging.info("Report generation completed.")
-
 
 @click.command("generate_report")
 @click.option("--data_name", required=True, type=click.STRING)
@@ -577,18 +575,16 @@ def generate_report_util(model: xgboost.Booster, data: pd.DataFrame, features: l
 @click.option('--skip_pdp', default=False, is_flag=True,
               help='Useful when testing, since pdp plots take a long time...')
 def generate_report(data_name: str, target_variable: str, skip_pdp: bool):
+
     model_name = get_model_name(data_name, target_variable)
-    data_path = get_processed_data_path(data_name)
-    model_path = get_model_path(model_name)
-    out_of_sample_predictions_path = get_model_cv_out_of_sample_predictions_path(model_name)
     report_path = Path(get_report_path(model_name))
     report_resources_path = Path(get_report_resource_path(model_name))
 
-    data, features_info, features_on_top, features_model = load_data(data_path, target_variable)
-    model = load_model(model_path)
-    out_of_sample_predictions = load_out_of_sample_predictions(out_of_sample_predictions_path, target_variable)
+    data, features_info, features_on_top, features_model = load_data(data_name, target_variable)
+    model = load_model(model_name)
+    out_of_sample_predictions = load_out_of_sample_predictions(model_name, target_variable)
     model_trials = load_hyperopt_trials(model_name)
-    generate_report_util(model, data, features_model, target_variable, out_of_sample_predictions, model_trials, report_path,
+    generate_report_util(model, data, features_info, features_model, target_variable, out_of_sample_predictions, model_trials, report_path,
                          report_resources_path, skip_pdp)
 
 

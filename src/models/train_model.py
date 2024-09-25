@@ -20,6 +20,7 @@ from sklearn.metrics import (
     f1_score as f_score,
 )
 
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import models.make_report as make_report
@@ -28,7 +29,7 @@ from utilities.load_utils import *
 from utilities.files_utils import *
 from utilities.model_utils import *
 from utilities.model_constants import *
-
+from utilities.export_utils import *
 
 
 
@@ -215,37 +216,19 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
     return model, best_hyperparams, res[-1], trials
 
 
-
-
-def export_model(model: xgboost.Booster, hyperparameters: dict, out_of_sample_predictions: pd.Series, trials : Trials, model_path: Path,
-                 hyperparameters_path: Path, out_of_sample_predictions_path: Path, trials_path : Path) -> None:
-    model.save_model(model_path)
-    dict_to_json(hyperparameters, hyperparameters_path)
-    out_of_sample_predictions.to_csv(out_of_sample_predictions_path)
-    save_trials(trials, trials_path)
-
-
 @click.command(name='train_model')
 @click.option('--data_name', required=True, type=click.STRING)
 @click.option('--target_variable', required=True, type=click.STRING)
 def train_model(data_name, target_variable):
     model_name = get_model_name(data_name, target_variable)
 
-    data_path = get_processed_data_path(data_name)
-    model_path = get_model_path(model_name)
-    hyperparameters_path = get_model_hyperparameters_path(model_name)
-    out_of_sample_predictions_path = get_model_cv_out_of_sample_predictions_path(model_name)
-    trials_path = get_model_trials_path(model_name)
-    report_path = get_report_path(model_name)
-    report_resources_path = get_report_resource_path(model_name)
-
-    prepare_dir(get_model_directory(model_name))
-    data, features_info, features_on_top, features_model = load_data(data_path, target_variable)
+    data, features_info, features_on_top, features_model = load_data(data_name, target_variable)
     model, hyperparameters, out_of_sample_predictions, trials = train_model_util(data, features_model, target_variable, False)
 
-    export_model(model, hyperparameters, out_of_sample_predictions, trials, model_path, hyperparameters_path,
-                 out_of_sample_predictions_path, trials_path)
+    export_model(model, hyperparameters, out_of_sample_predictions, trials, model_name)
 
+    report_path = get_report_path(model_name)
+    report_resources_path = get_report_resource_path(model_name)
     make_report.generate_report_util(model, data[features_model + [target_variable]], features_model, target_variable,
                                      out_of_sample_predictions, trials, report_path,
                                      report_resources_path, skip_pdp = True)
@@ -281,23 +264,16 @@ def evaluate_baseline_error_model(data: pd.DataFrame, features: list, target_var
 @click.option('--target_variable', required=True, type=click.STRING)
 def train_market_presence_model(data_name, target_variable):
     presence_model_name = get_presence_model_name(data_name, target_variable)
+    presence_model_target_variable = f'{target_variable}_presence'
 
-    presence_model_path = get_model_path(presence_model_name)
-    presence_model_hyperparamters_path = get_model_hyperparameters_path(presence_model_name)
-    presence_model_out_of_sample_predictions_path = get_model_cv_out_of_sample_predictions_path(presence_model_name)
+    data, features_info, features_on_top, features_model = load_data(data_name, target_variable, drop_target_na=False)
 
-    data_path = get_processed_data_path(data_name)
+    data[presence_model_target_variable] = ~data[target_variable].isna()
+    presence_model, presence_model_hyperparameters, presence_model_out_of_sample_predictions, presence_model_trials = (
+        train_model_util(data, features_model, presence_model_target_variable,True))
 
-    data, features_info, features_on_top, features_model = load_data(data_path, target_variable, drop_target_na=False)
-    data[f'{target_variable}_presence'] = ~data[target_variable].isna()
-    presence_model, presence_model_hyperparameters, presence_model_out_of_sample_predictions = (
-        train_model_util(data, features_model, f'{target_variable}_presence',True))
-
-    prepare_dir(get_model_directory(presence_model_name))
     export_model(presence_model, presence_model_hyperparameters, presence_model_out_of_sample_predictions,
-                 presence_model_path,
-                 presence_model_hyperparamters_path,
-                 presence_model_out_of_sample_predictions_path)
+                 presence_model_trials, presence_model_name)
 
 
 @click.command(name='train_error_model')
@@ -305,51 +281,36 @@ def train_market_presence_model(data_name, target_variable):
 @click.option('--target_variable', required=True, type=click.STRING)
 @click.option('--use_pretrained_model', required=False, type=click.BOOL, default=True, show_default=True)
 def train_error_model(data_name, target_variable, use_pretrained_model):
+
     model_name = get_model_name(data_name, target_variable)
     error_model_name = get_error_model_name(data_name, target_variable)
+    error_model_target_variable = f'{model_name}_error'
 
-    data_path = get_processed_data_path(data_name)
-    features_path = get_features_path(data_name)
+    data, features_info, features_on_top, features_model = load_data(data_name, target_variable)
 
-    model_path = get_model_path(model_name)
-    hyperparameters_path = get_model_hyperparameters_path(model_name)
-    out_of_sample_predictions_path = get_model_cv_out_of_sample_predictions_path(model_name)
+    model_exists = check_model_existence(model_name)
 
-    error_model_path = get_model_path(error_model_name)
-    error_model_hyperparameters_path = get_model_hyperparameters_path(error_model_name)
-    error_model_out_of_sample_predictions_path = get_model_cv_out_of_sample_predictions_path(error_model_name)
+    if (use_pretrained_model and not model_exists) or not use_pretrained_model:
+        train_model(data_name, target_variable)
 
-    data, features_info, features_on_top, features_model = load_data(data_path, target_variable)
-
-    if (use_pretrained_model and not os.path.exists(model_path)) or not use_pretrained_model:
-        prepare_dir(get_model_directory(model_name))
-        model, hyperparameters, out_of_sample_predictions = train_model_util(data, features_model, target_variable, False)
-        export_model(model, hyperparameters, out_of_sample_predictions, model_path, hyperparameters_path,
-                     out_of_sample_predictions_path)
-
-    out_of_sample_predictions_path = get_model_cv_out_of_sample_predictions_path(model_name)
-    predictions = load_out_of_sample_predictions(out_of_sample_predictions_path, target_variable)
+    predictions = load_out_of_sample_predictions(model_name, target_variable)
 
     errors = data[target_variable] - predictions
     errors[np.abs(errors) < 1000] = 0
     errors[np.abs(errors) > 1000] = 1
     errors = errors.astype(bool)
 
-    errors_feature = f'{model_name}_errors'
-    data[errors_feature] = errors
 
-    data = data[features_model + [errors_feature]]
+    data[error_model_target_variable] = errors
 
-    evaluate_baseline_error_model(data, features_model, errors_feature)
+    data = data[features_model + [error_model_target_variable]]
 
-    error_model, error_model_hyperparameters, error_model_out_of_sample_predictions = train_model_util(data, features_model,
-                                                                                                       errors_feature,
-                                                                                                       True)
+    evaluate_baseline_error_model(data, features_model, error_model_target_variable)
 
-    prepare_dir(get_model_directory(error_model_name))
-    export_model(error_model, error_model_hyperparameters, error_model_out_of_sample_predictions, error_model_path,
-                 error_model_hyperparameters_path,
-                 error_model_out_of_sample_predictions_path)
+    error_model, error_model_hyperparameters, error_model_out_of_sample_predictions, error_model_trials = train_model_util(data, features_model, error_model_target_variable, True)
+
+    export_model(error_model, error_model_hyperparameters, error_model_out_of_sample_predictions, error_model_trials, error_model_name)
+
 
 
 @click.group()

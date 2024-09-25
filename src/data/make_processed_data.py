@@ -8,6 +8,8 @@ import click
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utilities.load_utils import *
 from utilities.constants import *
+from utilities.export_utils import *
+from typing import Union
 from warnings import simplefilter
 simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -24,13 +26,12 @@ def cut_brackets_categorical(values: pd.Series, brackets: list) -> pd.Series:
 def make_postal_brackets_mtpl(data: pd.DataFrame, target_variables: list) -> Tuple[pd.DataFrame, List[str]]:
     bracket_cols = []
     for target_variable in target_variables:
+
         comp_name = column_to_folder_mapping.get(target_variable).replace('_tables', '')
         col_name = f'{target_variable}_PostalCode_cut'
-        lookups_table_path = get_mtpl_postal_categories_path(target_variable)
-        default_values_path = get_mtpl_default_values_path(target_variable)
 
-        lookups_table = load_lookups_table(lookups_table_path)
-        default_value = load_lookups_default_value(default_values_path)
+        lookups_table = load_lookups_table(target_variable)
+        default_value = load_lookups_default_value(target_variable)
 
         if default_value is None:
             default_value = lookups_table.key.max()
@@ -60,10 +61,11 @@ def make_postal_brackets_mtpl(data: pd.DataFrame, target_variables: list) -> Tup
     return data, bracket_cols
 
 
+def get_target_variables(columns: List[str], suffixes: Union[List[str], str] = 'price') -> List[str]:
+    if isinstance(suffixes, str):
+        suffixes = [suffixes]
+    return [col for col in columns if any(col.endswith(suffix) for suffix in suffixes)]
 
-
-def get_target_variables(columns, suffix = '_price'):
-    return [col for col in columns if col.endswith(suffix)]
 
 def remove_special_chars_from_columns(data: pd.DataFrame, features_model: List[str], target_variables : List[str]) -> Tuple[pd.DataFrame, List[str], List[str]]:
     special_chars_mapping = {'[': '(', ']': ')', '<': '{'}
@@ -273,11 +275,12 @@ def make_processed_punkta_data(datas : List[pd.DataFrame]) -> Tuple[pd.DataFrame
     data = pd.concat(processed_datas)
     data = data.set_index('unique_id')
 
-    target_variables = get_target_variables(data, suffix = '-price')
+    target_variables = get_target_variables(data.columns, suffixes = ['-price', '-isolated_price'])
 
     others = load_other('punkta')
     data = pd.merge(data, others['poland_postal_codes'][['postal_code', 'latitude', 'longitude', 'voivodeship', 'county']], on = 'postal_code')
 
+    data['calculation_time'] = pd.to_datetime(data['calculation_time'])
     data['vehicle_maker'] = data['vehicle_maker'].apply(lambda x : x + '-' if any([c in x for c in ['[', ']']]) else x)
     data['contractor_age'] = CURRENT_YEAR - data['contractor_birth_year']
     data['licence_at_age'] = data['driver_licence_year'] - data['contractor_birth_year']
@@ -301,7 +304,6 @@ def make_processed_punkta_data(datas : List[pd.DataFrame]) -> Tuple[pd.DataFrame
 
     data = data.loc[:,~data.columns.duplicated()].copy()
     data = data[list(set(data.columns))]
-    print(data)
     return data, features_info, features_on_top, features_model
 
 def make_processed_generator_data(datas : List[pd.DataFrame], data_name_reference : dict) -> Tuple[pd.DataFrame, List[str], List[str], List[str]]:
@@ -388,14 +390,14 @@ def make_processed_signal_iduna_data(data: pd.DataFrame) -> Tuple[pd.DataFrame, 
     data, features = remove_special_chars_from_columns(data, features)
     dummies_d = set([col for col in data.columns if col.endswith('__dummy')])
 
-    data_official, feature_official = load_data(get_processed_data_path('netrisk_casco_v36'), get_features_path('netrisk_casco_v36'))
-    dummies_official = set([col for col in feature_official if col.endswith('__dummy')])
+    data_official, _, _, features_official = load_data('netrisk_casco_v36')
+    dummies_official = set([col for col in features_official if col.endswith('__dummy')])
 
     for col in dummies_official:
         if col not in features:
             data[col] = False
 
-    features = feature_official
+    features = features_official
     data = data[features]
     data[index_col] = index
     data = data.set_index(index_col)
@@ -452,13 +454,7 @@ def make_processed_data(service: str, names: str, data_source: str, benchmark: b
 
     logger.info(f'Found name {processed_data_name}')
     logger.info("Loading data name reference")
-    data_name_reference_path = get_data_name_references_path()
-
-    if os.path.exists(data_name_reference_path):
-        with open(data_name_reference_path, 'r') as json_file:
-            data_name_reference = json.load(json_file)
-    else:
-        data_name_reference = {}
+    data_name_reference = load_data_name_reference()
 
     logger.info("Checking in data name reference for duplicate datasets...")
 
@@ -522,14 +518,14 @@ def make_processed_data(service: str, names: str, data_source: str, benchmark: b
         'features_model': features_model,
     }
 
-    with open(data_name_reference_path, 'w') as json_file:
-        json.dump(data_name_reference, json_file, indent=2)
-
+    export_data_name_reference(data_name_reference)
     logger.info("Data name reference updated successfully.")
-
+    print(data['calculation_time'].dtype)
     logger.info('Checking if everyting went well, buy trying to load the data ...')
-    data, features_info, features_on_top, features_model = load_data(processed_data_path)
+    data, features_info, features_on_top, features_model = load_data(processed_data_name)
     logger.info('All good')
+
+
 
 def check_processed_data_name(ctx, param, value):
     if value is not None:
@@ -544,25 +540,18 @@ def check_processed_data_name(ctx, param, value):
 @click.option('--processed_data_name', type=click.STRING, required=True, callback=check_processed_data_name)
 def remove_processed_data(processed_data_name: str):
     processed_data_path = get_processed_data_path(processed_data_name)
-    data_name_reference_path = get_data_name_references_path()
 
     logging.info("Removal process started ...")
     processed_data_path.unlink()
     logging.info("Removed processed data ...")
 
-    if data_name_reference_path.exists():
-        with open(data_name_reference_path, 'r+') as json_file:
-            data_name_reference = json.load(json_file)
-            if processed_data_name in data_name_reference:
-                del data_name_reference[processed_data_name]
-                logging.info(f"File '{processed_data_name}' removed from reference.")
-                json_file.seek(0)
-                json_file.truncate()
-                json.dump(data_name_reference, json_file, indent=4)
-            else:
-                logging.info(f"File '{processed_data_name}' not found in reference.")
+    data_name_reference = load_data_name_reference()
+    if processed_data_name in data_name_reference:
+        del data_name_reference[processed_data_name]
+        logging.info(f"File '{processed_data_name}' removed from reference.")
+        export_data_name_reference(data_name_reference)
     else:
-        logging.info(f"No data reference file found.")
+        logging.info(f"File '{processed_data_name}' not found in reference.")
 
 
 @click.group()
