@@ -150,7 +150,8 @@ def generate_dummies(data : pd.DataFrame, categorical_columns : List[str]) -> pd
     return data
 
 
-def make_processed_crawler_data(datas: List[pd.DataFrame]) -> Tuple[pd.DataFrame, List[str], List[str], List[str]]:
+def make_processed_crawler_data(datas: List[pd.DataFrame]) \
+        -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
 
     processed_datas = []
     legacy_cols_to_drop = ['id_case', 'BonusMalusCode', 'CarMakerCategory', 'Category', 'WÁBERER_price_PostalCode_cut']
@@ -185,11 +186,12 @@ def make_processed_crawler_data(datas: List[pd.DataFrame]) -> Tuple[pd.DataFrame
     data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
     data = data[features_info + features_on_top + features_model + target_variables]
 
-    return data, features_info, features_on_top, features_model
+    return data, features_info, features_on_top, features_model, target_variables
 
 
 
-def make_processed_netrisk_like_data(datas : List[pd.DataFrame], data_name_reference : dict) -> Tuple[pd.DataFrame, List[str], List[str], List[str]]:
+def make_processed_netrisk_like_data(datas : List[pd.DataFrame], data_name_reference : dict) \
+        -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
 
     processed_datas = []
     legacy_cols_to_drop = []
@@ -257,9 +259,9 @@ def make_processed_netrisk_like_data(datas : List[pd.DataFrame], data_name_refer
     data[diff] = False
 
     data = data[features_info + features_on_top + features_model]
-    return data, features_info, features_on_top, features_model
+    return data, features_info, features_on_top, features_model, target_variables
 
-def make_processed_punkta_data(datas : List[pd.DataFrame]) -> Tuple[pd.DataFrame, List[str], List[str], List[str]]:
+def make_processed_punkta_data(datas : List[pd.DataFrame]) -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
 
     processed_datas = []
     legacy_cols_to_drop = []
@@ -304,9 +306,10 @@ def make_processed_punkta_data(datas : List[pd.DataFrame]) -> Tuple[pd.DataFrame
 
     data = data.loc[:,~data.columns.duplicated()].copy()
     data = data[list(set(data.columns))]
-    return data, features_info, features_on_top, features_model
+    return data, features_info, features_on_top, features_model, target_variables
 
-def make_processed_generator_data(datas : List[pd.DataFrame], data_name_reference : dict) -> Tuple[pd.DataFrame, List[str], List[str], List[str]]:
+def make_processed_generator_data(datas : List[pd.DataFrame], data_name_reference : dict) \
+        -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
     processed_datas = []
     legacy_cols_to_drop = ['id_case', 'BonusMalusCode', 'CarMakerCategory', 'Category', 'WÁBERER_price_PostalCode_cut', 'Longitude', 'Latitude']
     legacy_rename = {}
@@ -366,10 +369,12 @@ def make_processed_generator_data(datas : List[pd.DataFrame], data_name_referenc
 
 
     data = data[features_info + features_on_top + features_model]
-    return data, features_info, features_on_top, features_model
+    return data, features_info, features_on_top, features_model, target_variables
 
 
-def make_processed_signal_iduna_data(data: pd.DataFrame) -> Tuple[pd.DataFrame, List[str], List[str], List[str]]:
+def make_processed_signal_iduna_data(datas: List[pd.DataFrame]) \
+        -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
+    data = pd.concat(datas)
     target_variables = USUAL_TARGET_VARIABLES
     index_col = 'unique_id'
     index = data[index_col]
@@ -401,7 +406,7 @@ def make_processed_signal_iduna_data(data: pd.DataFrame) -> Tuple[pd.DataFrame, 
     data = data[features]
     data[index_col] = index
     data = data.set_index(index_col)
-    return data, features, [], []
+    return data, features, [], [], []
 
 
 def find_first_available_name(service: str, benchmark: bool) -> str:
@@ -480,15 +485,15 @@ def make_processed_data(service: str, names: str, data_source: str, benchmark: b
 
 
     if data_source == "crawler":
-        data, features_info, features_on_top, features_model = make_processed_crawler_data(datas)
+        data, features_info, features_on_top, features_model, target_variables = make_processed_crawler_data(datas)
     elif data_source == 'generator':
-        data, features_info, features_on_top, features_model = make_processed_generator_data(datas, data_name_reference)
+        data, features_info, features_on_top, features_model, target_variables = make_processed_generator_data(datas, data_name_reference)
     elif data_source == "signal_iduna":
-        data, features_info, features_on_top, features_model = make_processed_signal_iduna_data(datas)
+        data, features_info, features_on_top, features_model, target_variables = make_processed_signal_iduna_data(datas)
     elif data_source == 'quotes_data':
-        data, features_info, features_on_top, features_model = make_processed_netrisk_like_data(datas, data_name_reference)
+        data, features_info, features_on_top, features_model, target_variables = make_processed_netrisk_like_data(datas, data_name_reference)
     elif data_source == 'punkta_data':
-        data, features_info, features_on_top, features_model = make_processed_punkta_data(datas)
+        data, features_info, features_on_top, features_model, target_variables = make_processed_punkta_data(datas)
     else:
         logger.info("Currently unsupported data source, aborting ...")
         return
@@ -516,6 +521,7 @@ def make_processed_data(service: str, names: str, data_source: str, benchmark: b
         'features_info': features_info,
         'features_on_top': features_on_top,
         'features_model': features_model,
+        'target_variables' : target_variables
     }
 
     export_data_name_reference(data_name_reference)

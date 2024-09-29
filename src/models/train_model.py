@@ -55,8 +55,10 @@ def model_train(train_data: pd.DataFrame,
     param_['max_depth'] = int(param_['max_depth'])
     param_['eval_metric'] = 'aucpr' if is_classification else 'mae'
     eval_list = [(dtrain, 'train'), (dtest, 'eval')]
-    return xgboost.train(param_, dtrain, num_boost_round=num_rounds, evals=eval_list, verbose_eval=False)
-
+    evals_result = {}
+    bst =  xgboost.train(param_, dtrain, num_boost_round=num_rounds, early_stopping_rounds=300, evals=eval_list,
+                         verbose_eval=False, evals_result=evals_result)
+    return bst
 
 def merge_predictions(model: xgboost.Booster,
                       test_data: pd.DataFrame,
@@ -229,7 +231,7 @@ def train_model(data_name, target_variable):
 
     report_path = get_report_path(model_name)
     report_resources_path = get_report_resource_path(model_name)
-    make_report.generate_report_util(model, data[features_model + [target_variable]], features_model, target_variable,
+    make_report.generate_report_util(model, data, features_info, features_model, target_variable,
                                      out_of_sample_predictions, trials, report_path,
                                      report_resources_path, skip_pdp = True)
 
