@@ -408,6 +408,83 @@ def make_processed_signal_iduna_data(datas: List[pd.DataFrame]) \
     data = data.set_index(index_col)
     return data, features, [], [], []
 
+def make_processed_zmarta_data(
+    datas: pd.DataFrame,
+) -> Tuple[pd.DataFrame, List[str], List[str], List[str]]:
+
+    processed_datas = []
+    legacy_cols_to_drop = []
+    legacy_rename = {}
+    legacy_cast = {}
+
+    for data in datas:
+        processed_data = data.drop(columns=legacy_cols_to_drop, errors="ignore")
+        processed_data = processed_data.rename(columns=legacy_rename, errors="ignore")
+        processed_data = processed_data.dropna(subset=legacy_cast.keys()).astype(
+            legacy_cast
+        )
+        processed_datas.append(processed_data)
+
+    data = pd.concat(processed_datas)
+
+    data = add_is_recent(data)
+
+    target_variables = get_target_variables(data.columns, suffixes=["_price"])
+
+    # data["calculation_time"] = pd.to_datetime(data["calculation_time"])
+    # data["vehicle_maker"] = data["vehicle_maker"].apply(
+    #     lambda x: x + "-" if any([c in x for c in ["[", "]"]]) else x
+    # )
+    data["contractor_age"] = CURRENT_YEAR - data["contractor_birth_year"]
+    data["vehicle_age"] = CURRENT_YEAR - data["vehicle_make_year"]
+
+    categorical_columns = [
+        "vehicle_maker",
+        "vehicle_model",
+        "vehicle_body_type",
+        "vehicle_fuel_type",
+        "contractor_gender",
+        "contractor_expected_mileage",
+        "contractor_living_place",
+        "driver_under25",
+        "deductible_level",
+        "postal_code",
+    ]
+    for categorical_col in categorical_columns:
+        data[categorical_col] = data[categorical_col].astype("category")
+    data["postal_code"] = pd.to_numeric(data["postal_code"], errors="coerce")
+    data["vehicle_number_of_seats"] = pd.to_numeric(
+        data["vehicle_number_of_seats"], errors="coerce"
+    )
+
+    features_info = ["calculation_time", "contractor_birth_year", "vehicle_make_year"]
+    features_on_top = []
+    features_model = (
+        [
+            "vehicle_engine_size",
+            "vehicle_power",
+            "vehicle_weight_min",
+            "vehicle_weight_max",
+            "vehicle_value",
+            "vehicle_number_of_seats",
+            "vehicle_ownership_duration",
+            "vehicle_number_of_owners",
+            "postal_code",
+            "annualy_commuting_km",
+        ]
+        + categorical_columns
+        + data.filter(like="__dummy").columns.to_list()
+    )
+
+    data, features_model, target_variables = remove_special_chars_from_columns(
+        data, features_model, target_variables
+    )
+    data = data[features_info + features_on_top + features_model + target_variables]
+
+    data = data.loc[:, ~data.columns.duplicated()].copy()
+    data = data[list(set(data.columns))]
+    return data, features_info, features_on_top, features_model, target_variables
+
 
 def find_first_available_name(service: str, benchmark: bool) -> str:
     v_id = 1
