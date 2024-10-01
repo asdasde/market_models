@@ -324,9 +324,11 @@ def plot_real_vs_predicted_by_feature_numeric(data: pd.DataFrame, feature: str,
 
     sns.lineplot(x=quantile_values, y=mean_values[f'mean_{target_variable}'], label='Real Mean', marker='o', ax=axes[0])
     sns.lineplot(x=quantile_values, y=mean_values['mean_predicted'], label='Predicted Mean', marker='x', ax=axes[0])
+    axes[0].set_ylim(0)
 
     sns.barplot(x=quantile_values, y=mean_values['mean_error'], palette=colors, ax=axes[1], hue=quantile_values, dodge=False,
                 legend=False)
+    axes[1].set_ylim(0)
 
     sns.histplot(data=data, x=feature, bins = len(quantile_values), stat='percent', kde=False, color='blue', alpha=0.3, ax=axes[2])
 
@@ -351,9 +353,11 @@ def plot_real_vs_predicted_by_feature_other(data: pd.DataFrame, feature: str,
 
     sns.lineplot(x=quantile_values, y=mean_values[f'mean_{target_variable}'], label='Real Mean', marker='o', ax=axes[0])
     sns.lineplot(x=quantile_values, y=mean_values['mean_predicted'], label='Predicted Mean', marker='x', ax=axes[0])
+    axes[0].set_ylim(0)
 
     sns.barplot(x=quantile_values, y=mean_values['mean_error'], palette=colors, ax=axes[1], hue=quantile_values, dodge=False,
                 legend=False)
+    axes[1].set_ylim(0)
 
     sns.countplot(data=data, x=feature, stat='percent', color='blue', alpha=0.3, order = quantile_values,
                  ax=axes[2])
