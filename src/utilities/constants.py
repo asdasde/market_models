@@ -63,5 +63,4 @@ column_to_folder_mapping = {
     'UNIQA_price': 'uniqa_tables',
     'WÁBERER_price': 'waberer_tables',
     'GRÁNIT_price' : 'waberer_tables',
-
 }

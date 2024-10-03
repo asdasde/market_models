@@ -8,14 +8,14 @@ from matplotlib.ticker import PercentFormatter
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pandas import CategoricalDtype
+from setuptools.command.rotate import rotate
 
 from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error, mean_absolute_error
-
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utilities.constants import QUANTILE_RANGE
-from utilities.model_constants import DEFAULT_REPORT_TABLE_OF_CONTENTS
+from utilities.model_constants import DEFAULT_REPORT_TABLE_OF_CONTENTS, FEATURES_TO_SKIP_PDP
 from utilities.model_utils import *
 from utilities.files_utils import *
 from utilities.load_utils import *
@@ -154,7 +154,7 @@ def partial_dependence_analysis(model: xgboost.Booster, data: pd.DataFrame, feat
     importance_dict = {}
     pdp_dict = {}
     for feature in features_model:
-        if feature in ['CarMake', 'CarModel', 'vehicle_maker', 'vehicle_model', 'county', 'calculation_time']:
+        if feature in FEATURES_TO_SKIP_PDP:
             continue
         if data[feature].dtype == 'category':
             feature_range = data[feature].unique()
@@ -164,6 +164,8 @@ def partial_dependence_analysis(model: xgboost.Booster, data: pd.DataFrame, feat
         for value in feature_range:
             data_copy = data.copy()
             data_copy[feature] = value
+            if data[feature].dtype == 'category':
+                data_copy[feature] = data_copy[feature].astype('category')
             predictions = predict(model, data_copy[features_model])
             partial_dependence_values.append(np.mean(predictions))
         importance_dict[feature] = np.std(partial_dependence_values)
@@ -171,20 +173,27 @@ def partial_dependence_analysis(model: xgboost.Booster, data: pd.DataFrame, feat
     return pdp_dict, importance_dict
 
 
-def plot_pdp_importance(features: list, importances, title="Feature importance",
+def plot_pdp_importance(features: list, importances, title="Feature Importance",
                         xlabel="Partial Dependence Feature Importance", ylabel="Features", values_format="{:.2f}",
                         save_path: Path = None, **kwargs):
-    sorted_indices = np.argsort(importances)
+    sorted_indices = np.argsort(importances)[::-1]
     features = [features[i] for i in sorted_indices]
     importances = [importances[i] for i in sorted_indices]
-    fig, ax = plt.subplots()
-    ax.barh(features, importances, **kwargs)
-    ax.set_title(title)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    sns.barplot(x=importances, y=features, palette='viridis', ax=ax, **kwargs)
+
+    ax.set_title(title, fontsize=14)
+    ax.set_xlabel(xlabel, fontsize=12)
+    ax.set_ylabel(ylabel, fontsize=12)
+    ax.grid(True, axis='x', linestyle='--', alpha=0.6)
+
     if save_path is not None:
-        plt.savefig(save_path)
-    plt.close()
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=300)
+        plt.close()
+
     return ax
 
 
@@ -226,20 +235,25 @@ def plot_feature_importance(model: xgboost.Booster, importances: dict, report_re
                             save_path=export_path  / f"06_feature_importance_pdp.jpg")
 
 
-def plot_pdps(features: list, pdp_dict: dict, report_resources_path: Path, idx : int):
+def plot_pdps(features: list, pdp_dict: dict, report_resources_path: Path, idx: int):
     for feature in features:
-        if feature in ['CarMake', 'CarModel']:
+        if feature in FEATURES_TO_SKIP_PDP:
             continue
         feature_range, pdp_values = pdp_dict[feature]
-        plt.plot(feature_range, pdp_values, label=feature)
+
+        sns.lineplot(x=feature_range, y=pdp_values, label=feature)
+
         plt.xlabel('Feature Values')
+        plt.xticks(rotation = 90)
         plt.ylabel('Partial Dependence')
-        plt.title('Partial Dependence Plots for Selected Features')
+        plt.title(f'Partial Dependence Plots for {feature}')
+        plt.grid(True, alpha=0.3)
         plt.legend()
+
+        plt.tight_layout()
         output_path = get_report_partial_dependence_plot_path(report_resources_path, feature, idx)
         plt.savefig(output_path)
         plt.close()
-
 
 def getQauntSplit(step=50):
     return [i / 1000 for i in range(0, 1001, step)]

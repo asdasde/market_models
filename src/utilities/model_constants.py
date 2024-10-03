@@ -10,7 +10,7 @@ MAX_EVALS = 50
 
 DEFAULT_PARAMS_REGRESSION = {
     'objective': 'reg:squarederror',
-    'booster': 'gbtree',
+    'booster': 'dart',
     'eval_metric': 'mae',
     'eta': 0.3,
     'num_boost_round': 100,
@@ -25,7 +25,11 @@ DEFAULT_PARAMS_REGRESSION = {
     "reg_alpha": 81.51686654321942,
     "reg_lambda": 0.1484520061561239,
     "seed": 0,
-    "subsample": 0.7355645569069456
+    "subsample": 0.7355645569069456,
+    'sample_type': 'uniform',
+    'normalize_type': 'tree',
+    'rate_drop': 0.1,
+        'skip_drop': 0.5
 }
 
 DEFAULT_PARAMS_CLASSIFICATION = {
@@ -76,6 +80,7 @@ DEFAULT_REPORT_TABLE_OF_CONTENTS = [
         "Error Quantiles",
         "Error Percentage Distribution",
         "Top k Largest Errors",
+        "Learning Curve",
         "Feature Importance",
         "Feature Distribution",
         "Partial Dependence Plots",
@@ -83,3 +88,4 @@ DEFAULT_REPORT_TABLE_OF_CONTENTS = [
         "Real vs Predicted Quantiles by Feature",
     ]
 
+FEATURES_TO_SKIP_PDP = ['CarMake', 'CarModel', 'vehicle_maker', 'vehicle_model', 'county', 'calculation_time']
