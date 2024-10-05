@@ -1,6 +1,8 @@
 import os
+import random
 import sys
 import click
+import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
 from hyperopt import Trials
 
@@ -9,7 +11,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from pandas import CategoricalDtype
 from setuptools.command.rotate import rotate
-
+import shap
 from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error, mean_absolute_error
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -153,7 +155,7 @@ def partial_dependence_analysis(model: xgboost.Booster, data: pd.DataFrame, feat
                                 grid_resolution: int = 100) -> tuple:
     importance_dict = {}
     pdp_dict = {}
-    for feature in features_model:
+    for feature in features_modelFi:
         if feature in FEATURES_TO_SKIP_PDP:
             continue
         if data[feature].dtype == 'category':
@@ -165,7 +167,7 @@ def partial_dependence_analysis(model: xgboost.Booster, data: pd.DataFrame, feat
             data_copy = data.copy()
             data_copy[feature] = value
             if data[feature].dtype == 'category':
-                data_copy[feature] = data_copy[feature].astype('category')
+                data_copy[feature] = pd.Categorical(data[feature], categories=feature_range)
             predictions = predict(model, data_copy[features_model])
             partial_dependence_values.append(np.mean(predictions))
         importance_dict[feature] = np.std(partial_dependence_values)
@@ -182,7 +184,7 @@ def plot_pdp_importance(features: list, importances, title="Feature Importance",
 
     fig, ax = plt.subplots(figsize=(8, 6))
 
-    sns.barplot(x=importances, y=features, palette='viridis', ax=ax, **kwargs)
+    sns.barplot(x=importances, y=features, hue = features, palette='viridis', ax=ax, legend=False, **kwargs)
 
     ax.set_title(title, fontsize=14)
     ax.set_xlabel(xlabel, fontsize=12)
@@ -232,7 +234,7 @@ def plot_feature_importance(model: xgboost.Booster, importances: dict, report_re
 
     if importances is not None:
         plot_pdp_importance(list(importances.keys()), list(importances.values()),
-                            save_path=export_path  / f"06_feature_importance_pdp.jpg")
+                            save_path=get_report_feature_importance_path(report_resources_path, 'pdp', idx))
 
 
 def plot_pdps(features: list, pdp_dict: dict, report_resources_path: Path, idx: int):
@@ -240,7 +242,7 @@ def plot_pdps(features: list, pdp_dict: dict, report_resources_path: Path, idx: 
         if feature in FEATURES_TO_SKIP_PDP:
             continue
         feature_range, pdp_values = pdp_dict[feature]
-
+        plt.figure(figsize=(8, 6))
         sns.lineplot(x=feature_range, y=pdp_values, label=feature)
 
         plt.xlabel('Feature Values')
@@ -423,9 +425,12 @@ def plot_real_vs_predicted_by_feature(data_p: pd.DataFrame, predictions : pd.Ser
     plt.savefig(output_path, dpi = 150)
     plt.close()
 
-def get_k_largest_errors(data: pd.DataFrame, errors: pd.Series, k: int, report_resources_path: Path, idx : int):
+def get_k_largest_errors(data: pd.DataFrame, out_of_sample_predictions : pd.Series, errors: pd.Series, k: int,
+                         report_resources_path: Path, idx : int):
     dc = data.copy()
+    dc['error'] = errors
     dc['abs_error'] = abs(errors)
+    dc['model_prediction'] = out_of_sample_predictions
 
     k_largest_errors = dc.sort_values(by='abs_error', ascending=False).iloc[:k]
     k_largest_errors_style = k_largest_errors.style.format(precision=2)
@@ -460,6 +465,40 @@ def plot_learning_curve(trials : Trials, report_resources_path: Path, idx : int)
     output_path = get_report_learning_curve_path(report_resources_path, idx)
     plt.savefig(output_path, bbox_inches='tight')
     plt.close()
+
+
+def compute_shap_values(model, data: pd.DataFrame, features_model: list, target_variable : str):
+    explainer = shap.Explainer(model)
+    d_matrix = make_d_matrix(data[features_model], data[target_variable], is_classification=False)
+    shap_values = explainer(d_matrix)
+    return shap_values
+
+def plot_shap_summary(shap_values, data, features_model : list, report_resources_path, idx: int):
+    plt.figure()
+    shap.summary_plot(shap_values, data[features_model])
+    output_path = report_resources_path / f"{idx:02d}_shap_summary_plot.jpg"
+    plt.savefig(output_path, bbox_inches='tight', dpi=200)
+    plt.close()
+
+def plot_shap_dependence(shap_values, data, feature, report_resources_path, idx: int):
+    plt.figure()
+    shap.dependence_plot(feature, shap_values.values, data)
+    output_path = report_resources_path / f"{idx:02d}_shap_dependence_plot_{feature}.jpg"
+    plt.savefig(output_path, bbox_inches='tight', dpi=200)
+    plt.close()
+
+
+def plot_shap_waterfall(shap_values, report_resources_path: Path, idx : int, k : int = 3):
+    random_indices = random.sample(range(shap_values.values.shape[0]), k)
+
+    for i, random_idx in enumerate(random_indices):
+        plt.figure()
+        shap.plots.waterfall(shap_values[random_idx])
+
+        output_path = report_resources_path / f"{idx:02d}_shap_waterfall_{i}.jpg"
+        plt.savefig(output_path, bbox_inches='tight', dpi=200)
+        plt.close()
+
 
 
 def make_pdf(report_resources_path: Path, report_path: Path):
@@ -519,9 +558,6 @@ def generate_report_cover_image(report_resources_path: Path, insurance_name: str
     return output_path
 
 
-
-
-
 def generate_report_util(
         model: xgboost.Booster,
         data: pd.DataFrame,
@@ -532,7 +568,8 @@ def generate_report_util(
         trials: Trials,
         report_path: Path,
         report_resources_path: Path,
-        skip_pdp: bool = False,
+        use_pdp: bool = False,
+        use_shap: bool = False,
 
 ):
     data = reconstruct_categorical_variables(data)
@@ -553,8 +590,11 @@ def generate_report_util(
     logging.info("Generating report cover image.")
     generate_report_cover_image(report_resources_path, target_variable, table_of_contents)
 
-    if not skip_pdp:
+    if use_pdp:
         pdp_dict, importance = partial_dependence_analysis(model, data, features_model)
+    if use_shap:
+        shap_values = compute_shap_values(model, data, features_model, target_variable)
+        shap_values.feature_names = features_model
 
     section_functions = {
         "Data Overview": lambda idx: make_data_overview(data, report_resources_path, idx),
@@ -563,19 +603,23 @@ def generate_report_util(
                                                             None, idx),
         "Error Percentage Distribution": lambda idx: plot_hist_error_percentage(errors_percentage,
                                                                                 report_resources_path, idx),
-        "Top k Largest Errors": lambda idx: get_k_largest_errors(data, errors, 10, report_resources_path, idx),
+        "Top k Largest Errors": lambda idx: get_k_largest_errors(data, out_of_sample_predictions, errors, 10
+                                                                 , report_resources_path, idx),
         "Feature Importance": lambda idx: plot_feature_importance(model, importance,
-                                                                  report_resources_path, idx) if not skip_pdp else None,
+                                                                  report_resources_path, idx) if use_pdp else None,
         "Feature Distribution": lambda idx: [plot_feature_distribution(data[feature], report_resources_path, idx) for
                                              feature in features_all],
         "Partial Dependence Plots": lambda idx: plot_pdps(features_model, pdp_dict, report_resources_path,
-                                                          idx) if not skip_pdp else None,
+                                                          idx) if use_pdp else None,
         "Real vs Predicted Quantiles": lambda idx: plot_real_vs_predicted_quantiles(real, out_of_sample_predictions,
                                                                                     report_resources_path, idx),
         "Real vs Predicted Quantiles by Feature": lambda idx: [
             plot_real_vs_predicted_by_feature(data, out_of_sample_predictions, feature, target_variable,
                                               report_resources_path, idx) for feature in features_all],
         "Learning Curve": lambda idx: plot_learning_curve(trials, report_resources_path, idx),
+        "Shapley Summary": lambda idx: plot_shap_summary(shap_values, data, features_model, report_resources_path, idx)
+                                        if use_pdp else None,
+        "Shapley Waterfall": lambda idx : plot_shap_waterfall(shap_values, report_resources_path, idx, k = 3) if use_shap else None,
     }
 
     for section_id, section in enumerate(table_of_contents, start=1):
@@ -590,9 +634,9 @@ def generate_report_util(
 @click.command("generate_report")
 @click.option("--data_name", required=True, type=click.STRING)
 @click.option("--target_variable", required=True, type=click.STRING)
-@click.option('--skip_pdp', default=False, is_flag=True,
-              help='Useful when testing, since pdp plots take a long time...')
-def generate_report(data_name: str, target_variable: str, skip_pdp: bool):
+@click.option('--use_pdp', default=False, is_flag=True, help='Useful when testing, since pdp plots take a long time...')
+@click.option('--use_shap', default=False, is_flag=True, help='Useful when testing, since shap plots take a long time...')
+def generate_report(data_name: str, target_variable: str, use_pdp: bool, use_shap : bool):
 
     model_name = get_model_name(data_name, target_variable)
     report_path = Path(get_report_path(model_name))
@@ -603,7 +647,7 @@ def generate_report(data_name: str, target_variable: str, skip_pdp: bool):
     out_of_sample_predictions = load_out_of_sample_predictions(model_name, target_variable)
     model_trials = load_hyperopt_trials(model_name)
     generate_report_util(model, data, features_info, features_model, target_variable, out_of_sample_predictions, model_trials, report_path,
-                         report_resources_path, skip_pdp)
+                         report_resources_path, use_pdp, use_shap)
 
 
 @click.group()

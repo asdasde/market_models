@@ -16,7 +16,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def cut_brackets_numeric(values: pd.Series, brackets: list) -> pd.Series:
     bins = [interval[0] - 1 for interval in brackets] + [brackets[-1][1]]
-    return pd.cut(values, bins=bins)
+    return pd.cut(values, bins=bins).astype(str)
 
 
 def cut_brackets_categorical(values: pd.Series, brackets: list) -> pd.Series:
@@ -171,7 +171,8 @@ def make_processed_crawler_data(datas: List[pd.DataFrame]) \
     data, bracket_features = add_bracket_features(data, features_to_add_bracket, target_variables)
 
     categorical_columns = ['BonusMalus', 'CarMake', 'CarModel', 'isRecent'] + bracket_features
-    data = generate_dummies(data, categorical_columns)
+    data[categorical_columns] = data[categorical_columns].astype('category')
+    #data = generate_dummies(data, categorical_columns)
 
     data['DeductiblePercentage'] = data['DeductiblePercentage'].fillna(10)
     data['DeductibleAmount'] = data['DeductibleAmount'].fillna(100000)
@@ -180,7 +181,7 @@ def make_processed_crawler_data(datas: List[pd.DataFrame]) \
 
     features_info = NETRISK_CASCO_FEATURES_INFO
     features_on_top = NETRISK_CASCO_FEATURES_ON_TOP
-    features_model = data.columns.difference(features_info + features_on_top + target_variables)
+    features_model = data.columns.difference(features_info + features_on_top + target_variables).tolist()
 
 
     data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
@@ -194,8 +195,8 @@ def make_processed_netrisk_like_data(datas : List[pd.DataFrame], data_name_refer
         -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
 
     processed_datas = []
-    legacy_cols_to_drop = []
-    legacy_rename = {'DriverAge' : 'Age'}
+    legacy_cols_to_drop = ['CarModel']
+    legacy_rename = {'DriverAge' : 'Age', 'vehicle_model' : "CarModel"}
     legacy_cast = {'PostalCode' : int}
 
     for data in datas:
@@ -207,7 +208,6 @@ def make_processed_netrisk_like_data(datas : List[pd.DataFrame], data_name_refer
     target_variables = DEFAULT_TARGET_VARIABLES
 
     data = pd.concat(processed_datas)
-    data = data.set_index('unique_id')
     data = data[data['vehicle_make_year'] >= 2014]
 
     data = data[data.columns.drop_duplicates()]
@@ -231,7 +231,7 @@ def make_processed_netrisk_like_data(datas : List[pd.DataFrame], data_name_refer
                                      .drop_duplicates(subset=['postal_code']))
     others['hungary_postal_codes'] = others['hungary_postal_codes'].rename(columns=geo_data_rename)
 
-    data = pd.merge(data, others['hungary_postal_codes'], on = 'PostalCode')
+    data = pd.merge(data, others['hungary_postal_codes'], on = 'PostalCode', how = 'left')
 
 
     data['DeductibleAmount'] = data['DeductibleAmount'].fillna(100000)
@@ -242,9 +242,11 @@ def make_processed_netrisk_like_data(datas : List[pd.DataFrame], data_name_refer
     features_to_add_bracket = ['Age', 'PostalCode']
     data, bracket_features = add_bracket_features(data, features_to_add_bracket, target_variables)
 
+    data['CarModel'] = ''
 
     categorical_columns = ['BonusMalus', 'CarMake', 'CarModel', 'isRecent'] + bracket_features
-    data = generate_dummies(data, categorical_columns)
+    data[categorical_columns] = data[categorical_columns].astype('category')
+    #data = generate_dummies(data, categorical_columns)
 
     features_info = NETRISK_CASCO_FEATURES_INFO
     features_on_top = NETRISK_CASCO_FEATURES_ON_TOP
@@ -253,11 +255,7 @@ def make_processed_netrisk_like_data(datas : List[pd.DataFrame], data_name_refer
     features_model = reconstruct_features_model(data_name_reference[latest_model_training_data]['features_model'])
 
     data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
-
-    diff = sorted(list(set(features_model).difference(data.columns)))
-    diff = [x for x in diff if x.endswith('__dummy')]
-    data[diff] = False
-
+    data = data.set_index('unique_id')
     data = data[features_info + features_on_top + features_model]
     return data, features_info, features_on_top, features_model, target_variables
 
@@ -354,7 +352,8 @@ def make_processed_generator_data(datas : List[pd.DataFrame], data_name_referenc
     data, bracket_features = add_bracket_features(data, features_to_add_bracket, target_variables)
 
     categorical_columns = ['BonusMalus', 'CarMake', 'CarModel', 'isRecent'] + bracket_features
-    data = generate_dummies(data, categorical_columns)
+    #data = generate_dummies(data, categorical_columns)
+    data[categorical_columns] = data[categorical_columns].astype('category')
 
     features_info = NETRISK_CASCO_FEATURES_INFO
     features_on_top = NETRISK_CASCO_FEATURES_ON_TOP
@@ -363,21 +362,38 @@ def make_processed_generator_data(datas : List[pd.DataFrame], data_name_referenc
     features_model = reconstruct_features_model(data_name_reference[latest_model_training_data]['features_model'])
 
     data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
-    diff = sorted(list(set(features_model).difference(data.columns)))
-    diff = [x for x in diff if x.endswith('__dummy')]
-    data[diff] = False
+    #diff = sorted(list(set(features_model).difference(data.columns)))
+    #diff = [x for x in diff if x.endswith('__dummy')]
+    #data[diff] = False
 
 
     data = data[features_info + features_on_top + features_model]
     return data, features_info, features_on_top, features_model, target_variables
 
 
-def make_processed_signal_iduna_data(datas: List[pd.DataFrame]) \
+def make_processed_signal_iduna_data(datas: List[pd.DataFrame], data_name_reference : dict) \
         -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
-    data = pd.concat(datas)
-    target_variables = USUAL_TARGET_VARIABLES
-    index_col = 'unique_id'
-    index = data[index_col]
+
+    processed_datas = []
+    legacy_cols_to_drop = []
+    legacy_rename = {}
+    legacy_cast = {}
+
+    for data in datas:
+        processed_data = data.drop(columns=legacy_cols_to_drop, errors='ignore')
+        processed_data = processed_data.rename(columns=legacy_rename, errors='ignore')
+        processed_data = processed_data.dropna(subset=legacy_cast.keys()).astype(legacy_cast)
+        processed_datas.append(processed_data)
+
+    target_variables = DEFAULT_TARGET_VARIABLES
+    data = pd.concat(processed_datas)
+    data = data.set_index('unique_id')
+
+    if 'DeductibleAmount' not in data.columns:
+        data['DeductibleAmount'] = 100000
+    if 'DeductiblePercentage' not in data.columns:
+        data['DeductiblePercentage'] = 10
+
 
     data['Age'] = data['DriverAge']
     data['car_value'] = 15000
@@ -386,27 +402,25 @@ def make_processed_signal_iduna_data(datas: List[pd.DataFrame]) \
 
     data = add_is_recent(data)
 
+    data['DeductibleAmount'] = data['DeductibleAmount'].fillna(100000)
+    data['DeductiblePercentage'] = data['DeductiblePercentage'].fillna(10)
+    data[NETRISK_CASCO_EQUIPMENT_COLS] = False
+
     data, bracket_features = add_bracket_features(data, ['Age', 'PostalCode'], target_variables)
 
     categorical_columns = ['BonusMalus', 'CarMake', 'CarModel', 'isRecent'] + bracket_features
+    data[categorical_columns] = data[categorical_columns].astype('category')
+    #data = generate_dummies(data, categorical_columns)
 
-    data = generate_dummies(data, categorical_columns)
-    features = data.columns.difference(target_variables)
-    data, features = remove_special_chars_from_columns(data, features)
-    dummies_d = set([col for col in data.columns if col.endswith('__dummy')])
+    features_info = NETRISK_CASCO_FEATURES_INFO
+    features_on_top = NETRISK_CASCO_FEATURES_ON_TOP
 
-    data_official, _, _, features_official = load_data('netrisk_casco_v36')
-    dummies_official = set([col for col in features_official if col.endswith('__dummy')])
+    latest_model_training_data = 'netrisk_casco_v1'
+    features_model = reconstruct_features_model(data_name_reference[latest_model_training_data]['features_model'])
 
-    for col in dummies_official:
-        if col not in features:
-            data[col] = False
-
-    features = features_official
-    data = data[features]
-    data[index_col] = index
-    data = data.set_index(index_col)
-    return data, features, [], [], []
+    data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
+    data = data[features_info + features_on_top + features_model]
+    return data, features_info, features_on_top, features_model, target_variables
 
 def make_processed_zmarta_data(
     datas: pd.DataFrame,
@@ -508,7 +522,6 @@ def extract_features_with_dtype(data: pd.DataFrame, features: List[str]) -> Dict
             else:
                 feature_dict[column] = {"dtype": str(data[column].dtype)}
 
-    # Remove dummy_values key if it's empty
     for key in feature_dict:
         if "dummy_values" in feature_dict[key] and not feature_dict[key]["dummy_values"]:
             del feature_dict[key]["dummy_values"]
@@ -566,7 +579,7 @@ def make_processed_data(service: str, names: str, data_source: str, benchmark: b
     elif data_source == 'generator':
         data, features_info, features_on_top, features_model, target_variables = make_processed_generator_data(datas, data_name_reference)
     elif data_source == "signal_iduna":
-        data, features_info, features_on_top, features_model, target_variables = make_processed_signal_iduna_data(datas)
+        data, features_info, features_on_top, features_model, target_variables = make_processed_signal_iduna_data(datas, data_name_reference)
     elif data_source == 'quotes_data':
         data, features_info, features_on_top, features_model, target_variables = make_processed_netrisk_like_data(datas, data_name_reference)
     elif data_source == 'punkta_data':
@@ -603,7 +616,6 @@ def make_processed_data(service: str, names: str, data_source: str, benchmark: b
 
     export_data_name_reference(data_name_reference)
     logger.info("Data name reference updated successfully.")
-    print(data['calculation_time'].dtype)
     logger.info('Checking if everyting went well, buy trying to load the data ...')
     data, features_info, features_on_top, features_model = load_data(processed_data_name)
     logger.info('All good')

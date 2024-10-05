@@ -6,9 +6,29 @@ TEST_SIZE = 0.1
 RANDOM_STATE = 42
 ERROR_MODEL_CLASSIFICATION_THRESHOLD = 0.8
 PRESENCE_MODEL_CLASSIFICATION_THRESHOLD = 0.5
-MAX_EVALS = 50
+MAX_EVALS = 20
 
 DEFAULT_PARAMS_REGRESSION = {
+    'objective': 'reg:squarederror',
+    'booster': 'gbtree',
+    'eval_metric': 'mae',
+    'eta': 0.3,
+    'num_boost_round': 100,
+    'early_stopping_rounds': None,
+    "colsample_bytree": 0.9963829889516952,
+    "gamma": 1.9729702249620764,
+    "lambda": 0.6687059388368572,
+    "learning_rate": 0.14904051561388795,
+    "max_depth": 7,
+    "min_child_weight": 2,
+    "n_estimators": 1000,
+    "reg_alpha": 81.51686654321942,
+    "reg_lambda": 0.1484520061561239,
+    "seed": 0,
+    "subsample": 0.7355645569069456,
+}
+
+DEFAULT_PARAMS_REGRESSION_DART = {
     'objective': 'reg:squarederror',
     'booster': 'dart',
     'eval_metric': 'mae',
@@ -29,7 +49,7 @@ DEFAULT_PARAMS_REGRESSION = {
     'sample_type': 'uniform',
     'normalize_type': 'tree',
     'rate_drop': 0.1,
-        'skip_drop': 0.5
+    'skip_drop': 0.5
 }
 
 DEFAULT_PARAMS_CLASSIFICATION = {
@@ -86,6 +106,8 @@ DEFAULT_REPORT_TABLE_OF_CONTENTS = [
         "Partial Dependence Plots",
         "Real vs Predicted Quantiles",
         "Real vs Predicted Quantiles by Feature",
+        "Shapley Summary",
+        "Shapley Waterfall"
     ]
 
 FEATURES_TO_SKIP_PDP = ['CarMake', 'CarModel', 'vehicle_maker', 'vehicle_model', 'county', 'calculation_time']

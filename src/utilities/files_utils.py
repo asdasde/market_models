@@ -27,13 +27,9 @@ def detect_csv_delimiter(file_path: Path) -> str:
 
 
 def read_data_frame(file_path: Path) -> pd.DataFrame:
-    file_path = Path(file_path)  # Ensure file_path is a Path object
     file_extension = file_path.suffix.lower()
     if file_extension == '.csv':
-        try:
-            return pd.read_csv(file_path, index_col='unique_id')
-        except Exception as e:
-            return pd.read_csv(file_path)
+        return pd.read_csv(file_path)
     elif file_extension in ['.xls', '.xlsx']:
         return pd.read_excel(file_path)
     elif file_extension == '.json':

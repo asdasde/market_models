@@ -18,3 +18,4 @@ jupyterlab-pygments
 beautifulsoup4
 scikit-learn
 mlxtend
+shap

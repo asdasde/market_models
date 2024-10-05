@@ -233,7 +233,7 @@ def train_model(data_name, target_variable):
     report_resources_path = get_report_resource_path(model_name)
     make_report.generate_report_util(model, data, features_info, features_model, target_variable,
                                      out_of_sample_predictions, trials, report_path,
-                                     report_resources_path, skip_pdp = True)
+                                     report_resources_path, use_pdp = False, use_shap=False)
 
 
 def get_feature_quartiles(data: pd.DataFrame):

@@ -12,9 +12,11 @@ def get_processed_data_path(data_name: str) -> Path:
 def get_interim_data_path(data_name: str) -> Path:
     return INTERIM_DATA_PATH / f'{data_name}_before_crawling.csv'
 
-def get_predictions_all_path(data_name: str, train_data_name : str) -> Path:
-    return PREDICTIONS_PATH / f'{data_name}_via_{train_data_name}_all_predictions.parquet'
-
+def get_predictions_all_path(data_name: str, train_data_name : str, apply_presence_models : str) -> Path:
+    if apply_presence_models:
+        return PREDICTIONS_PATH / f'{data_name}_via_{train_data_name}_with_presence_models_all_predictions.parquet'
+    else:
+        return PREDICTIONS_PATH / f'{data_name}_via_{train_data_name}_all_predictions.parquet'
 def get_predictions_path(data_name: str, model_name: str) -> Path:
     return PREDICTIONS_PATH / f'{data_name}__{model_name}.csv'
 
@@ -29,6 +31,9 @@ def get_error_model_name(data_name: str, target_variable: str) -> str:
 
 def get_presence_model_name(data_name: str, target_variable: str) -> str:
     return f'{data_name}_{target_variable}_presence_model'
+
+def get_presence_model_name_from_model_name(model_name : str) -> str:
+    return f'{model_name.replace('_model', '')}_presence_model'
 
 def get_model_directory(model_name: str) -> Path:
     return MODELS_PATH / model_name
