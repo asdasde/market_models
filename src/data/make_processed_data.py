@@ -475,6 +475,8 @@ def make_processed_zmarta_data(
     features_on_top = []
     features_model = (
         [
+            "vehicle_age",
+            "contractor_age",
             "vehicle_engine_size",
             "vehicle_power",
             "vehicle_weight_min",
@@ -584,6 +586,8 @@ def make_processed_data(service: str, names: str, data_source: str, benchmark: b
         data, features_info, features_on_top, features_model, target_variables = make_processed_netrisk_like_data(datas, data_name_reference)
     elif data_source == 'punkta_data':
         data, features_info, features_on_top, features_model, target_variables = make_processed_punkta_data(datas)
+    elif data_source == "zmarta_data":
+        data, features_info, features_on_top, features_model, target_variables = make_processed_zmarta_data(datas)
     else:
         logger.info("Currently unsupported data source, aborting ...")
         return
