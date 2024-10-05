@@ -155,7 +155,7 @@ def partial_dependence_analysis(model: xgboost.Booster, data: pd.DataFrame, feat
                                 grid_resolution: int = 100) -> tuple:
     importance_dict = {}
     pdp_dict = {}
-    for feature in features_modelFi:
+    for feature in features_model:
         if feature in FEATURES_TO_SKIP_PDP:
             continue
         if data[feature].dtype == 'category':
