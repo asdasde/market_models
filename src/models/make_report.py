@@ -158,20 +158,28 @@ def partial_dependence_analysis(model: xgboost.Booster, data: pd.DataFrame, feat
     for feature in features_model:
         if feature in FEATURES_TO_SKIP_PDP:
             continue
-        if data[feature].dtype == 'category':
-            feature_range = data[feature].unique()
+        
+        if pd.api.types.is_categorical_dtype(data[feature]) or data[feature].dtype == 'object':
+            feature_range = data[feature].dropna().unique()
         else:
             feature_range = np.linspace(data[feature].min(), data[feature].max(), grid_resolution)
+        
         partial_dependence_values = []
+        
         for value in feature_range:
             data_copy = data.copy()
-            data_copy[feature] = value
-            if data[feature].dtype == 'category':
-                data_copy[feature] = pd.Categorical(data[feature], categories=feature_range)
+            
+            if pd.api.types.is_categorical_dtype(data[feature]) or data[feature].dtype == 'object':
+                data_copy[feature] = pd.Categorical([value] * len(data_copy), categories=feature_range)
+            else:
+                data_copy[feature] = value
+
             predictions = predict(model, data_copy[features_model])
             partial_dependence_values.append(np.mean(predictions))
+        
         importance_dict[feature] = np.std(partial_dependence_values)
         pdp_dict[feature] = (feature_range, partial_dependence_values)
+    
     return pdp_dict, importance_dict
 
 
@@ -618,7 +626,7 @@ def generate_report_util(
                                               report_resources_path, idx) for feature in features_all],
         "Learning Curve": lambda idx: plot_learning_curve(trials, report_resources_path, idx),
         "Shapley Summary": lambda idx: plot_shap_summary(shap_values, data, features_model, report_resources_path, idx)
-                                        if use_pdp else None,
+                                        if use_shap else None,
         "Shapley Waterfall": lambda idx : plot_shap_waterfall(shap_values, report_resources_path, idx, k = 3) if use_shap else None,
     }
 
