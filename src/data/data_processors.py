@@ -154,7 +154,7 @@ def generate_dummies(data : pd.DataFrame, categorical_columns : List[str]) -> pd
 
 
 
-def make_processed_crawler_data(datas: List[pd.DataFrame], data_name_reference : dict) \
+def make_processed_crawler_data(datas: List[pd.DataFrame], data_name_reference : dict, encoding_type : str) \
         -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
 
     processed_datas = []
@@ -235,7 +235,7 @@ def make_processed_crawler_data(datas: List[pd.DataFrame], data_name_reference :
     return data, features_info, features_on_top, features_model, target_variables
 
 
-def make_processed_netrisk_casco_like_data(datas : List[pd.DataFrame], data_name_reference : dict) \
+def make_processed_netrisk_casco_like_data(datas : List[pd.DataFrame], data_name_reference : dict, encoding_type : str) \
         -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
 
     processed_datas = []
@@ -325,7 +325,7 @@ def make_processed_netrisk_casco_like_data(datas : List[pd.DataFrame], data_name
     return data, features_info, features_on_top, features_model, target_variables
 
 
-def make_processed_netrisk_like_data(datas : List[pd.DataFrame], data_name_reference : dict) \
+def make_processed_netrisk_like_data(datas : List[pd.DataFrame], data_name_reference : dict, encoding_type : str) \
         -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
 
     processed_datas = []
@@ -393,7 +393,7 @@ def make_processed_netrisk_like_data(datas : List[pd.DataFrame], data_name_refer
     data = data[features_info + features_on_top + features_model]
     return data, features_info, features_on_top, features_model, target_variables
 
-def make_processed_punkta_data(datas : List[pd.DataFrame]) -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
+def make_processed_punkta_data(datas : List[pd.DataFrame], encoding_type : str) -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
 
     processed_datas = []
     legacy_cols_to_drop = []
@@ -440,7 +440,7 @@ def make_processed_punkta_data(datas : List[pd.DataFrame]) -> Tuple[pd.DataFrame
     data = data[list(set(data.columns))]
     return data, features_info, features_on_top, features_model, target_variables
 
-def make_processed_generator_data(datas : List[pd.DataFrame], data_name_reference : dict) \
+def make_processed_generator_data(datas : List[pd.DataFrame], data_name_reference : dict, encoding_type : str) \
         -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
     processed_datas = []
     legacy_cols_to_drop = ['id_case', 'BonusMalusCode', 'CarMakerCategory', 'Category', 'WÁBERER_price_PostalCode_cut', 'Longitude', 'Latitude']
@@ -505,7 +505,7 @@ def make_processed_generator_data(datas : List[pd.DataFrame], data_name_referenc
     return data, features_info, features_on_top, features_model, target_variables
 
 
-def make_processed_signal_iduna_data(datas: List[pd.DataFrame], data_name_reference : dict) \
+def make_processed_signal_iduna_data(datas: List[pd.DataFrame], data_name_reference : dict, encoding_type : str) \
         -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
 
     processed_datas = []
@@ -565,7 +565,7 @@ def make_processed_signal_iduna_data(datas: List[pd.DataFrame], data_name_refere
     data = data[features_info + features_on_top + features_model + target_variables]
     return data, features_info, features_on_top, features_model, target_variables
 
-def make_processed_zmarta_data(datas: pd.DataFrame) -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
+def make_processed_zmarta_data(datas: pd.DataFrame, data_name_reference : dict, encoding_type : str) -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
     processed_datas = []
     legacy_cols_to_drop = []
     legacy_rename = {}

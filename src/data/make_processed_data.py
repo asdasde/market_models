@@ -2,8 +2,10 @@ import logging
 
 import click
 import pandas as pd
+from pygments.lexer import default
 
 from data_processors import *
+from models.train_model import train_model
 from utilities.export_utils import *
 
 def handle_names(names : str, names_file_name : str, logger : logging.Logger)->List:
@@ -27,6 +29,14 @@ DATA_SOURCE_HANDLER = {
     "zmarta_data":  make_processed_zmarta_data,
 }
 
+def check_duplicates(data_name_reference : dict, service, names, encoding_type):
+    for entry in data_name_reference.values():
+        if (names == set(entry['raw_data_used']) and service == entry['service'] and
+                           encoding_type == entry["encoding_type"]):
+            return True
+    return False
+
+
 @click.command(name='make_processed_data')
 @click.option('--service', required=False, default='netrisk_casco')
 @click.option('--names', type=click.STRING, help='List of dates separated by ",".')
@@ -35,7 +45,8 @@ DATA_SOURCE_HANDLER = {
               help='Currently supported data sources are (crawler, signal_iduna)')
 @click.option('--benchmark', default=False, type=click.BOOL,
               help='Signals that it is purely for benchmarking purposes, and should not be used for training purposes.')
-def make_processed_data(service: str, names: str, names_file_name: str, data_source: str, benchmark: bool) -> None:
+@click.option('--encoding_type', type=click.STRING, default = 'xgb_categorical', help='Currently only xgboost category')
+def make_processed_data(service: str, names: str, names_file_name: str, data_source: str, benchmark: bool, encoding_type : str) -> None:
     logger = logging.getLogger(__name__)
 
     names = handle_names(names, names_file_name, logger)
@@ -50,11 +61,10 @@ def make_processed_data(service: str, names: str, names_file_name: str, data_sou
     logger.info("Loading data name reference")
     data_name_reference = load_data_name_reference()
 
+
     logger.info("Checking in data name reference for duplicate datasets...")
-    duplicate_found = any(
-        names == set(entry['raw_data_used'])
-        for entry in data_name_reference.values()
-    )
+
+    duplicate_found = check_duplicates(data_name_reference, service, names, encoding_type)
 
     if duplicate_found:
         logger.info("Duplicate found, aborting ...")
@@ -75,7 +85,8 @@ def make_processed_data(service: str, names: str, names_file_name: str, data_sou
         logger.info("Currently unsupported data source, aborting ...")
         return
 
-    data, features_info, features_on_top, features_model, target_variables = processing_function(datas, data_name_reference)
+    data, features_info, features_on_top, features_model, target_variables = (
+        processing_function(datas, data_name_reference, encoding_type))
 
     logger.info("Exporting processed data and feature file")
     processed_data_path = Path(get_processed_data_path(processed_data_name))
@@ -88,19 +99,21 @@ def make_processed_data(service: str, names: str, names_file_name: str, data_sou
     features_model = extract_features_with_dtype(data, features_model)
 
     data_name_reference[processed_data_name] = {
+        'service': service,
+        'data_source' : data_source,
         'raw_data_used': list(names),
         'processed_data_used': [],
         'processed_name': processed_data_name,
         'num_rows': len(data),
         'date_processed': datetime.now().strftime('%Y-%m-%d %H:%M'),
-        'data_source': data_source,
         'file_size_mb': file_size_mb,
         'is_benchmark': benchmark,
         'index_column_name': data.index.name,
+        'encoding_type' : encoding_type,
         'features_info': features_info,
         'features_on_top': features_on_top,
         'features_model': features_model,
-        'target_variables': target_variables
+        'target_variables': target_variables,
     }
 
     export_data_name_reference(data_name_reference)
@@ -108,6 +121,7 @@ def make_processed_data(service: str, names: str, names_file_name: str, data_sou
     logger.info('Checking if everything went well by trying to load the data ...')
     data, features_info, features_on_top, features_model = load_data(processed_data_name)
     logger.info('All good')
+
 
 @click.command(name='merge_processed_data')
 @click.option('--service', required=False, default='netrisk_casco')
@@ -128,6 +142,7 @@ def merge_processed_datas(service: str, names: str, names_file_name: str):
     data_name_reference = load_data_name_reference()
 
     logger.info("Checking in data name reference for duplicate datasets...")
+
     duplicate_found = any(
         names == set(entry['processed_data_used'])
         for entry in data_name_reference.values()

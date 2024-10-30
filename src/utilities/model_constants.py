@@ -6,17 +6,17 @@ TEST_SIZE = 0.1
 RANDOM_STATE = 42
 ERROR_MODEL_CLASSIFICATION_THRESHOLD = 0.8
 PRESENCE_MODEL_CLASSIFICATION_THRESHOLD = 0.5
-MAX_EVALS = 20
+MAX_EVALS =60
 
 DEFAULT_PARAMS_REGRESSION = {
-    'objective': 'reg:squarederror',
+    'objective': 'reg:absoluteerror',
     'booster': 'gbtree',
     'eval_metric': 'mae',
     'eta': 0.3,
     'num_boost_round': 100,
     'early_stopping_rounds': None,
     "colsample_bytree": 0.9963829889516952,
-    "gamma": 1.9729702249620764,
+    "gamma": 0.9,
     "lambda": 0.6687059388368572,
     "learning_rate": 0.14904051561388795,
     "max_depth": 7,
@@ -80,6 +80,7 @@ SPACE_REGRESSION = {
     'seed': 0,
 }
 
+
 SPACE_CLASSIFICATION = {
     'learning_rate': hp.uniform('learning_rate', 0.01, 0.3),
     'n_estimators': hp.choice('n_estimators', np.arange(100, 1300, 100, dtype=int)),
@@ -110,4 +111,4 @@ DEFAULT_REPORT_TABLE_OF_CONTENTS = [
         "Shapley Waterfall"
     ]
 
-FEATURES_TO_SKIP_PDP = ['CarMake', 'CarModel', 'vehicle_maker', 'vehicle_model', 'county', 'calculation_time']
+FEATURES_TO_SKIP_PDP = ['CarMake', 'CarModel', 'vehicle_maker', 'vehicle_model', 'county', 'date_crawled']
