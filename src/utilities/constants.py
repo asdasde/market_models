@@ -22,10 +22,39 @@ NETRISK_CASCO_DTYPES = {'isRecent': 'bool', 'CarMake': 'category', 'CarModel': '
                         'Category': 'int', 'Longitude': 'float', 'Latitude': 'float', 'Age': 'int', 'LicenseAge': 'int',
                         'BonusMalus': 'category',
                         'BonusMalusCode': 'category'}
-NETRISK_CASCO_EQUIPMENT_COLS = ['polished_specialty','AirConditioning','AlloyWheels','AutomaticTransmission','LeatherSeats','NavigationSystems','XenonHeadlights','Camera','Sunroof','LedHeadlights','ShockAbsorber','UltraSonic','DrivingSupportSystem']
-NETRISK_CASCO_FEATURES_ON_TOP = ['DeductiblePercentage','DeductibleAmount'] + NETRISK_CASCO_EQUIPMENT_COLS
-NETRISK_CASCO_FEATURES_INFO = ['DateCrawled']
+NETRISK_CASCO_EQUIPMENT_COLS = [
+    "vehicle_equipment_polished",
+    "vehicle_equipment_ac",
+    "vehicle_equipment_alloy_wheels",
+    "vehicle_equipment_automatic_transmission",
+    "vehicle_equipment_leather_seats",
+    "vehicle_equipment_navigation",
+    "vehicle_equipment_xenon_lights",
+    "vehicle_equipment_camera",
+    "vehicle_equipment_sunroof",
+    "vehicle_equipment_led_lights",
+    "vehicle_equipment_shock_system",
+    "vehicle_equipment_parking_system",
+    "vehicle_equipment_driving_support",
+]
 
+NETRISK_CASCO_RIDERS = [
+    "glass_damage_deductible",
+    "additional_insurance",
+    "accident_insurance",
+    "luggage_insurance",
+    "legal_protection",
+    "rental",
+    "assistance"
+]
+
+NETRISK_CASCO_FEATURES_ON_TOP = (['bonus_malus_casco', 'deductible_percentage','deductible_amount', 'payment_frequency',
+                                 'payment_method'] + NETRISK_CASCO_EQUIPMENT_COLS + NETRISK_CASCO_RIDERS)
+NETRISK_CASCO_FEATURES_INFO = ['date_crawled', 'policy_start_date', 'vehicle_trim']
+
+
+NETRISK_CASCO_CATEGORICAL_COLUMNS = ['vehicle_eurotax_code', 'bonus_malus_current', 'bonus_malus_casco', 'vehicle_maker',
+                           'vehicle_model', 'vehicle_fuel_type', 'is_recent', 'payment_frequency', 'payment_method']
 
 FEATURES_TO_IGNORE = []
 DEFAULT_TARGET_VARIABLES = ['ALFA_price', 'ALLIANZ_price', 'GENERALI_price', 'GENERTEL_price',

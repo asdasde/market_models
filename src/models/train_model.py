@@ -6,9 +6,11 @@ import click
 
 from pathlib import Path
 from typing import Optional, List
+
+import hyperopt.atpe
 from dotenv import find_dotenv, load_dotenv
 from mlxtend.classifier import OneRClassifier
-from hyperopt import STATUS_OK, Trials, fmin, tpe
+from hyperopt import STATUS_OK, SparkTrials, Trials, fmin, tpe, rand
 from sklearn.model_selection import train_test_split, StratifiedKFold
 
 from sklearn.metrics import (
@@ -25,8 +27,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import models.make_report as make_report
 
-from utilities.load_utils import *
-from utilities.files_utils import *
 from utilities.model_utils import *
 from utilities.model_constants import *
 from utilities.export_utils import *
@@ -182,49 +182,69 @@ def kFoldCrossValidation(k: int,
         return mMae, mRMse, mMape, out_of_sample_predictions
 
 
-
-
 def train_model_util(data: pd.DataFrame, features: list, target_variable: str, is_classification: bool):
     logging.info("Removed columns that are not used and nan values on target variable...")
+
+
     trials = Trials()
 
     def objective(space):
         params = space.copy()
-        loss = kFoldCrossValidation(k=3, data=data, features=features, target_variable=target_variable,
-                                    is_classification=is_classification, param=params, debug=False)
+        loss = kFoldCrossValidation(
+            k=3,
+            data=data,
+            features=features,
+            target_variable=target_variable,
+            is_classification=is_classification,
+            param=params,
+            debug=False
+        )
         return {"loss": loss[0 if is_classification else 0], 'status': STATUS_OK}
 
     logging.info("Starting hyper-parameter tuning...")
-
     if is_classification:
         space = SPACE_CLASSIFICATION
     else:
         space = SPACE_REGRESSION
 
-    best_hyperparams = fmin(fn=objective,
-                            space=space,
-                            algo=tpe.suggest,
-                            max_evals=MAX_EVALS,
-                            trials=trials,
-                            return_argmin=False)
-
+    best_hyperparams = fmin(
+        fn=objective,
+        space=space,
+        algo=hyperopt.atpe.suggest,
+        max_evals=MAX_EVALS,
+        trials=trials,
+        return_argmin=False
+    )
 
     model = model_train(data, data, features, target_variable, is_classification, best_hyperparams)
     logging.info("Finished hyper-parameter tuning...")
 
-    res = kFoldCrossValidation(k=3, data=data, features=features, target_variable=target_variable,
-                               is_classification=is_classification, param=best_hyperparams, debug=True)
-
+    res = kFoldCrossValidation(
+        k=3,
+        data=data,
+        features=features,
+        target_variable=target_variable,
+        is_classification=is_classification,
+        param=best_hyperparams,
+        debug=True
+    )
     return model, best_hyperparams, res[-1], trials
 
-
 @click.command(name='train_model')
+@click.option('--service', required=True, type=click.STRING)
 @click.option('--data_name', required=True, type=click.STRING)
 @click.option('--target_variable', required=True, type=click.STRING)
-def train_model(data_name, target_variable):
+def train_model(service, data_name, target_variable):
     model_name = get_model_name(data_name, target_variable)
 
     data, features_info, features_on_top, features_model = load_data(data_name, target_variable)
+
+    on_top = load_on_top_file(service)
+    data[f'{target_variable}_orig'] = data[target_variable]
+    data = apply_on_top(data, target_variable, on_top)
+    data[target_variable] = data[f'corrected_{target_variable}']
+    print(abs(data[target_variable] - data[f'{target_variable}_orig']).mean())
+
     model, hyperparameters, out_of_sample_predictions, trials = train_model_util(data, features_model, target_variable, False)
 
     export_model(model, hyperparameters, out_of_sample_predictions, trials, model_name)
@@ -233,7 +253,7 @@ def train_model(data_name, target_variable):
     report_resources_path = get_report_resource_path(model_name)
     make_report.generate_report_util(model, data, features_info, features_model, target_variable,
                                      out_of_sample_predictions, trials, report_path,
-                                     report_resources_path, use_pdp = False, use_shap=False)
+                                     report_resources_path, use_pdp = True, use_shap=False)
 
 
 def get_feature_quartiles(data: pd.DataFrame):

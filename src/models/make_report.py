@@ -158,17 +158,17 @@ def partial_dependence_analysis(model: xgboost.Booster, data: pd.DataFrame, feat
     for feature in features_model:
         if feature in FEATURES_TO_SKIP_PDP:
             continue
-        
+
         if pd.api.types.is_categorical_dtype(data[feature]) or data[feature].dtype == 'object':
             feature_range = data[feature].dropna().unique()
         else:
             feature_range = np.linspace(data[feature].min(), data[feature].max(), grid_resolution)
-        
+
         partial_dependence_values = []
-        
+
         for value in feature_range:
             data_copy = data.copy()
-            
+
             if pd.api.types.is_categorical_dtype(data[feature]) or data[feature].dtype == 'object':
                 data_copy[feature] = pd.Categorical([value] * len(data_copy), categories=feature_range)
             else:
@@ -176,10 +176,10 @@ def partial_dependence_analysis(model: xgboost.Booster, data: pd.DataFrame, feat
 
             predictions = predict(model, data_copy[features_model])
             partial_dependence_values.append(np.mean(predictions))
-        
+
         importance_dict[feature] = np.std(partial_dependence_values)
         pdp_dict[feature] = (feature_range, partial_dependence_values)
-    
+
     return pdp_dict, importance_dict
 
 
@@ -598,6 +598,9 @@ def generate_report_util(
     logging.info("Generating report cover image.")
     generate_report_cover_image(report_resources_path, target_variable, table_of_contents)
 
+    pdp_dict = None
+    importance = None
+    shap_values = None
     if use_pdp:
         pdp_dict, importance = partial_dependence_analysis(model, data, features_model)
     if use_shap:
@@ -614,7 +617,7 @@ def generate_report_util(
         "Top k Largest Errors": lambda idx: get_k_largest_errors(data, out_of_sample_predictions, errors, 10
                                                                  , report_resources_path, idx),
         "Feature Importance": lambda idx: plot_feature_importance(model, importance,
-                                                                  report_resources_path, idx) if use_pdp else None,
+                                                                  report_resources_path, idx),
         "Feature Distribution": lambda idx: [plot_feature_distribution(data[feature], report_resources_path, idx) for
                                              feature in features_all],
         "Partial Dependence Plots": lambda idx: plot_pdps(features_model, pdp_dict, report_resources_path,

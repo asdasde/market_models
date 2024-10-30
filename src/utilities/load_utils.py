@@ -99,6 +99,13 @@ def load_data_name_reference() -> dict:
         data_name_reference = {}
     return data_name_reference
 
+def load_names_file(names_file) -> list:
+    names_file_path = get_names_file_path(names_file)
+    with open(names_file_path, 'r') as file:
+        names = names_file_path.read_text().strip().split('\n')
+    return sorted(names)
+    return names
+
 def reconstruct_features_model(features_model_dict: Dict[str, Dict[str, str]]) -> List[str]:
     reconstructed_features = []
 
@@ -216,4 +223,13 @@ def reconstruct_categorical_variables(data : pd.DataFrame) -> pd.DataFrame:
 
 def load_distribution(service: str, params_v: str):
     return load_params(service, params_v), load_other(service)
+
+def load_on_top_file(service : str) -> pd.DataFrame:
+    on_top_path = get_on_top_factor_files(service)
+    on_top = pd.read_csv(on_top_path, sep = ';')
+    on_top['features'] = on_top['features'].apply(eval)
+    on_top['feature_values'] = on_top['feature_values'].apply(eval)
+    on_top['factor'] = on_top['factor'].fillna(1)
+    return on_top
+
 

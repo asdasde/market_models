@@ -3,6 +3,8 @@ from utilities.path_constants import *
 from utilities.constants import column_to_folder_mapping
 from datetime import datetime
 
+
+
 def get_raw_data_path(data_name: str, extension = '.csv') -> Path:
     return RAW_DATA_PATH / f'{data_name}{extension}'
 
@@ -89,6 +91,9 @@ def get_mtpl_default_values_path(target_variable: str) -> Path:
     comp_name = tables_name.replace('_tables', '')
     return MTPL_POSTAL_CATEGORIES_PATH / f'{comp_name}_factor_default_values_table.csv'
 
+def get_on_top_factor_files(service : str) -> Path:
+    return ON_TOP_PATH / service / f'{service}_on_top.csv'
+
 def get_encoder_path(feature: str) -> Path:
     return ENCODERS_PATH / f'{feature}_encoder.pkl'
 
@@ -146,9 +151,11 @@ def get_report_cover_image_path(report_resources_path: Path, idx) -> Path:
 def get_data_name_references_path() -> Path:
     return REFERENCES_PATH / 'data_name_references.json'
 
+def get_names_file_path(names_file_name : str) -> Path:
+    return REFERENCES_PATH / f'{names_file_name}.txt'
+
 def get_brackets_path(feature: str) -> Path:
     return BRACKETS_PATH / f'{feature}_brackets.json'
-
 
 def get_profiles_for_crawling_dir(data_name: str) -> Path:
     return INTERIM_DATA_PATH / data_name

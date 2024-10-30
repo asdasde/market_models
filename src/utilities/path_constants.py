@@ -9,6 +9,7 @@ REMOTE_SERVER_FOR_SAVING_DATA = os.getenv('SERVER_FOR_SAVING_DATA')
 REMOTE_CRAWLER_DIRECTORY = os.getenv('REMOTE_CRAWLER_DIRECTORY')
 
 DISTRIBUTION_PATH = Path('../data/external/distributions/')
+ON_TOP_PATH = Path('../data/external/on_top/')
 PROCESSED_DATA_PATH = Path('../data/processed/')
 INTERIM_DATA_PATH = Path('../data/interim/')
 RAW_DATA_PATH = Path('../data/raw/')
