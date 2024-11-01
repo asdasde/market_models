@@ -2,8 +2,6 @@ import os
 import sys
 import re
 
-from tensorboard import errors
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utilities.load_utils import *
@@ -622,14 +620,14 @@ def make_processed_zmarta_data(datas: pd.DataFrame, data_name_reference : dict, 
             "vehicle_number_of_owners",
             "postal_code",
             "annualy_commuting_km",
-            "contractor_owned_vehicles",
-            "contractor_residence_living_duration",
+            # "contractor_owned_vehicles",
+            # "contractor_residence_living_duration",
             "postal_code_density",
             # "postal_code_median_age",
             "latitude",
             "longitude",
-            "postal_code_average_income",
-            "postal_code_payment_complaints_percent",
+            # "postal_code_average_income",
+            # "postal_code_payment_complaints_percent",
         ]
         + categorical_columns
         + data.filter(like="__dummy").columns.to_list()

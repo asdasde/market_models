@@ -103,6 +103,9 @@ def get_report_path(model_name: str) -> Path:
 def get_report_resource_path(model_name: str) -> Path:
     return REPORTS_PATH / model_name / 'resources'
 
+def get_error_overview_path(service: str) -> Path:
+    return ERROR_OVERVIEW_PATH / f"error_overview_{service}" / "error_overview.xlsx"
+
 from pathlib import Path
 
 def get_report_data_overview_path(report_resources_path: Path, idx) -> Path:

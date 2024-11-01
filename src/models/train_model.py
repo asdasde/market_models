@@ -7,7 +7,7 @@ import click
 from pathlib import Path
 from typing import Optional, List
 
-import hyperopt.atpe
+import hyperopt.tpe
 from dotenv import find_dotenv, load_dotenv
 from mlxtend.classifier import OneRClassifier
 from hyperopt import STATUS_OK, SparkTrials, Trials, fmin, tpe, rand
@@ -26,6 +26,7 @@ from sklearn.metrics import (
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import models.make_report as make_report
+import models.error_overview as error_overview
 
 from utilities.model_utils import *
 from utilities.model_constants import *
@@ -107,7 +108,7 @@ def kFoldCrossValidation(k: int,
 
     out_of_sample_predictions = pd.Series(index=data.index, dtype=float)
 
-    kf = create_stratified_cv_splits(data, target_variable, k=3, num_groups=10)
+    kf = create_stratified_cv_splits(data, target_variable, k=k, num_groups=10)
     fold_num = 0
     for train_ix, test_ix in kf:
         fold_num += 1
@@ -210,7 +211,7 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
     best_hyperparams = fmin(
         fn=objective,
         space=space,
-        algo=hyperopt.atpe.suggest,
+        algo=tpe.suggest,
         max_evals=MAX_EVALS,
         trials=trials,
         return_argmin=False
@@ -219,16 +220,15 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
     model = model_train(data, data, features, target_variable, is_classification, best_hyperparams)
     logging.info("Finished hyper-parameter tuning...")
 
-    res = kFoldCrossValidation(
-        k=3,
-        data=data,
-        features=features,
-        target_variable=target_variable,
-        is_classification=is_classification,
-        param=best_hyperparams,
-        debug=True
-    )
-    return model, best_hyperparams, res[-1], trials
+    res = kFoldCrossValidation(k=3, data=data, features=features, target_variable=target_variable,
+                               is_classification=is_classification, param=best_hyperparams, debug=True)
+    
+    mMae = res[0]
+    meanPrice = data[target_variable].mean()
+    percent_mMae = round(mMae / meanPrice * 100, 3)
+
+    return model, best_hyperparams, res[-1], trials, percent_mMae
+
 
 @click.command(name='train_model')
 @click.option('--service', required=True, type=click.STRING)
@@ -245,7 +245,7 @@ def train_model(service, data_name, target_variable):
     data[target_variable] = data[f'corrected_{target_variable}']
     print(abs(data[target_variable] - data[f'{target_variable}_orig']).mean())
 
-    model, hyperparameters, out_of_sample_predictions, trials = train_model_util(data, features_model, target_variable, False)
+    model, hyperparameters, out_of_sample_predictions, trials, percent_mMae = train_model_util(data, features_model, target_variable, False)
 
     export_model(model, hyperparameters, out_of_sample_predictions, trials, model_name)
 
@@ -253,7 +253,11 @@ def train_model(service, data_name, target_variable):
     report_resources_path = get_report_resource_path(model_name)
     make_report.generate_report_util(model, data, features_info, features_model, target_variable,
                                      out_of_sample_predictions, trials, report_path,
-                                     report_resources_path, use_pdp = True, use_shap=False)
+                                     report_resources_path, use_pdp=True, use_shap=False)
+    
+    error_overview_path = get_error_overview_path(service)
+    error_overview.update_error_overview(percent_mMae, data_name, target_variable, error_overview_path)
+
 
 
 def get_feature_quartiles(data: pd.DataFrame):
