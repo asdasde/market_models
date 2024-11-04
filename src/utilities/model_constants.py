@@ -67,7 +67,7 @@ DEFAULT_PARAMS_CLASSIFICATION = {
 }
 
 SPACE_REGRESSION = {
-    'objective': hp.choice('objective', ['reg:squarederror']),
+    'objective': hp.choice('objective', ['reg:absoluteerror']),
     'booster': hp.choice('booster', ['gbtree']),
     'learning_rate': hp.uniform('learning_rate', 0.01, 0.3),
     'n_estimators': hp.choice('n_estimators', np.arange(100, 1600, 50, dtype=int)),

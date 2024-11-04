@@ -1,4 +1,7 @@
+from curses.ascii import isdigit
 from pathlib import Path
+
+from models.train_model import train_model
 from utilities.path_constants import *
 from utilities.constants import column_to_folder_mapping
 from datetime import datetime
@@ -28,6 +31,7 @@ def get_features_path(data_name: str) -> Path:
 def get_model_name(data_name: str, target_variable: str) -> str:
     return f'{data_name}_{target_variable}_model'
 
+
 def get_error_model_name(data_name: str, target_variable: str) -> str:
     return f'{data_name}_{target_variable}_error_model'
 
@@ -39,6 +43,17 @@ def get_presence_model_name_from_model_name(model_name : str) -> str:
 
 def get_model_directory(model_name: str) -> Path:
     return MODELS_PATH / model_name
+
+def get_all_models_on_train_data(train_data_name : str, is_presence_model : bool) -> list:
+    model_names = []
+    for model_directory in MODELS_PATH.glob('*'):
+        model_name = model_directory.stem
+        c1 = train_data_name in model_name
+        c2 = len(model_name) >= len(train_data_name) and not isdigit(model_name[len(train_data_name)])
+        c3 = (is_presence_model == ('presence_model' in model_name))
+        if c1 and c2 and c3:
+            model_names.append(model_name)
+    return model_names
 
 def get_model_path(model_name: str) -> Path:
     return get_model_directory(model_name) / f'{model_name}.json'

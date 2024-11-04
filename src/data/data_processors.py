@@ -24,7 +24,11 @@ def make_postal_brackets_mtpl(data: pd.DataFrame, target_variables: list) -> Tup
     bracket_cols = []
     for target_variable in target_variables:
 
-        comp_name = column_to_folder_mapping.get(target_variable).replace('_tables', '')
+        comp_name = column_to_folder_mapping.get(target_variable, None)
+        if comp_name is None:
+            continue
+        comp_name = comp_name.replace('_tables', '')
+
         col_name = f'{target_variable}_postal_code_cut'
 
         lookups_table = load_lookups_table(target_variable)
@@ -125,7 +129,7 @@ def add_bracket_feature(data: pd.DataFrame, target_variables: list, feature: str
     cut_cols = []
     for target_variable in target_variables:
         target_variable = 'WÁBERER_price' if target_variable == 'GRÁNIT_price' else target_variable
-        if len(brackets[target_variable]) == 0:
+        if target_variable not in brackets.keys() or len(brackets[target_variable]) == 0:
             continue
         cut_name = f'{target_variable}_{feature}_cut'
         cut_cols.append(cut_name)
@@ -150,6 +154,10 @@ def generate_dummies(data : pd.DataFrame, categorical_columns : List[str]) -> pd
                     col in data.columns]
     return data
 
+def add_rank1_price(data : pd.DataFrame, target_variables) -> Tuple[pd.DataFrame, List[str]]:
+    data['rank1_price'] = data[target_variables].min(axis = 1)
+    target_variables.append('rank1_price')
+    return data, target_variables
 
 
 def make_processed_crawler_data(datas: List[pd.DataFrame], data_name_reference : dict, encoding_type : str) \
@@ -177,6 +185,7 @@ def make_processed_crawler_data(datas: List[pd.DataFrame], data_name_reference :
     data = data[data.columns.drop_duplicates()]
 
     target_variables = get_target_variables(data.columns)
+    data, target_variables = add_rank1_price(data, target_variables)
 
     data = add_is_recent(data)
 

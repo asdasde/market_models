@@ -169,7 +169,7 @@ def partial_dependence_analysis(model: xgboost.Booster, data: pd.DataFrame, feat
         for value in feature_range:
             data_copy = data.copy()
 
-            if pd.api.types.is_categorical_dtype(data[feature]) or data[feature].dtype == 'object':
+            if isinstance(data[feature].dtype, CategoricalDtype) or data[feature].dtype == 'object':
                 data_copy[feature] = pd.Categorical([value] * len(data_copy), categories=feature_range)
             else:
                 data_copy[feature] = value
