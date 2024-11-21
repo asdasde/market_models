@@ -1,6 +1,9 @@
 import os
 import sys
 import re
+from venv import logger
+
+import numpy as np
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -176,7 +179,7 @@ def make_processed_crawler_data(datas: List[pd.DataFrame], data_name_reference :
                     "vehicle_equipment_xenon_headlights": "vehicle_equipment_xenon_lights"
      }
     for data in datas:
-
+        print(len(data))
         processed_data = data.drop(columns=legacy_cols_to_drop, errors='ignore')
         processed_data = processed_data.rename(columns=legacy_rename, errors='ignore')
         processed_datas.append(processed_data)
@@ -211,6 +214,8 @@ def make_processed_crawler_data(datas: List[pd.DataFrame], data_name_reference :
     if 'payment_method' not in data.columns:
         data['payment_method'] = 'bank_transfer'
 
+    data['payment_method'] = data['payment_method'].fillna('bank_transfer')
+    data['payment_frequency'] = data['payment_frequency'].fillna('yearly')
 
     categorical_columns = NETRISK_CASCO_CATEGORICAL_COLUMNS + bracket_features
     data[categorical_columns] = data[categorical_columns].astype('category')
@@ -222,12 +227,14 @@ def make_processed_crawler_data(datas: List[pd.DataFrame], data_name_reference :
     for equipment in NETRISK_CASCO_EQUIPMENT_COLS:
         if equipment not in data.columns:
             data[equipment] = False
+        data[equipment].fillna(False)
 
     data[NETRISK_CASCO_EQUIPMENT_COLS] = data[NETRISK_CASCO_EQUIPMENT_COLS].fillna(False)
 
     for rider in NETRISK_CASCO_RIDERS:
         if rider not in data.columns:
             data[rider] = False
+        data[rider].fillna(False)
 
     features_info = NETRISK_CASCO_FEATURES_INFO
     features_on_top = NETRISK_CASCO_FEATURES_ON_TOP
@@ -238,7 +245,6 @@ def make_processed_crawler_data(datas: List[pd.DataFrame], data_name_reference :
     data = data[features_info + features_on_top + features_model + target_variables]
     data['id_case'] = range(len(data))
     data = data.set_index('id_case')
-    print(data.dropna(subset = ['policy_start_date']))
     return data, features_info, features_on_top, features_model, target_variables
 
 
@@ -316,16 +322,6 @@ def make_processed_netrisk_casco_like_data(datas : List[pd.DataFrame], data_name
     latest_model_training_data = 'netrisk_casco_v1'
     features_model = reconstruct_features_model(data_name_reference[latest_model_training_data]['features_model'])
 
-    # %%
-    data = data[~data[NETRISK_CASCO_EQUIPMENT_COLS + NETRISK_CASCO_RIDERS].any(axis=1)]
-    # %%
-    data = data[data['payment_frequency'] == 'yearly']
-    # %%
-    data = data[data['payment_method'] == 'bank_transfer']
-    # %%
-    data = data[data['deductible_percentage'] == 10]
-    data = data[data['deductible_amount'] == 100000]
-
     data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
     data = data.set_index('unique_id')
     data = data[features_info + features_on_top + features_model + target_variables]
@@ -400,7 +396,9 @@ def make_processed_netrisk_like_data(datas : List[pd.DataFrame], data_name_refer
     data = data[features_info + features_on_top + features_model]
     return data, features_info, features_on_top, features_model, target_variables
 
-def make_processed_punkta_data(datas : List[pd.DataFrame], encoding_type : str) -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
+
+def make_processed_punkta_data(datas : List[pd.DataFrame], data_name_reference : dict, encoding_type : str) \
+        -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
 
     processed_datas = []
     legacy_cols_to_drop = []
@@ -417,12 +415,21 @@ def make_processed_punkta_data(datas : List[pd.DataFrame], encoding_type : str) 
     data = data.set_index('unique_id')
 
     target_variables = get_target_variables(data.columns, suffixes = ['-price', '-isolated_price'])
+    log_target_variables = []
+    for i, target_variable in enumerate(target_variables):
+        try:
+            data[f'log_{target_variable}'] = np.log(data[target_variable])
+            log_target_variables.append(f'log_{target_variable}')
+        except Exception as e:
+            print(e)
+    target_variables += log_target_variables
 
     others = load_other('punkta')
     data = pd.merge(data, others['poland_postal_codes'][['postal_code', 'latitude', 'longitude', 'voivodeship', 'county']], on = 'postal_code')
 
-    data['date_crawled'] = pd.to_datetime(data['date_crawled'])
+    data['date_crawled'] = pd.to_datetime(data['calculation_time'])
     data['vehicle_maker'] = data['vehicle_maker'].apply(lambda x : x + '-' if any([c in x for c in ['[', ']']]) else x)
+    data['vehicle_age'] = CURRENT_YEAR - data['vehicle_make_year']
     data['contractor_age'] = CURRENT_YEAR - data['contractor_birth_year']
     data['licence_at_age'] = data['driver_licence_year'] - data['contractor_birth_year']
     data['driver_experience'] = CURRENT_YEAR - data['driver_licence_year']
@@ -439,6 +446,24 @@ def make_processed_punkta_data(datas : List[pd.DataFrame], encoding_type : str) 
                       'contractor_age', 'licence_at_age', 'driver_experience', 'latitude', 'longitude']
                       + categorical_columns
                       + data.filter(like ='__dummy').columns.to_list())
+
+
+    original_len = len(data)
+
+    data = data[data['contractor_age'] >= 18]
+    data = data[data['licence_at_age'] >= 15]
+    data = data[data['driver_experience'] >= 0]
+    data = data[data['vehicle_age'] >= 0]
+    data = data[data['vehicle_power'] >= 20]
+    data = data[data['vehicle_engine_size'] >= 100]
+    data = data[data['vehicle_weight_min'] >= 200]
+
+    data = data[data['vehicle_usage'] == 'private']
+    data = data[data['vehicle_type'].isin(['Samochody osobowe', 'Osobowy'])]
+
+    filtered_len = len(data)
+    print(f"Filtered out {original_len - filtered_len} rows, for having impossible values,"
+          f" which is {round(1 - filtered_len / original_len, 2)}")
 
     data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
     data = data[features_info + features_on_top + features_model + target_variables]

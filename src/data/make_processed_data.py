@@ -1,11 +1,5 @@
-import logging
-
 import click
-import pandas as pd
-from pygments.lexer import default
-
 from data_processors import *
-from models.train_model import train_model
 from utilities.export_utils import *
 
 def handle_names(names : str, names_file_name : str, logger : logging.Logger)->List:
@@ -29,10 +23,10 @@ DATA_SOURCE_HANDLER = {
     "zmarta_data":  make_processed_zmarta_data,
 }
 
-def check_duplicates(data_name_reference : dict, service, names, encoding_type):
+def check_duplicates(data_name_reference : dict, service, names, encoding_type, data_len):
     for entry in data_name_reference.values():
         if (names == set(entry['raw_data_used']) and service == entry['service'] and
-                           encoding_type == entry["encoding_type"]):
+                           encoding_type == entry["encoding_type"] and data_len == entry['num_rows']):
             return True
     return False
 
@@ -46,7 +40,9 @@ def check_duplicates(data_name_reference : dict, service, names, encoding_type):
 @click.option('--benchmark', default=False, type=click.BOOL,
               help='Signals that it is purely for benchmarking purposes, and should not be used for training purposes.')
 @click.option('--encoding_type', type=click.STRING, default = 'xgb_categorical', help='Currently only xgboost category')
-def make_processed_data(service: str, names: str, names_file_name: str, data_source: str, benchmark: bool, encoding_type : str) -> None:
+@click.option('--short_description', type=click.STRING, default = None)
+def make_processed_data(service: str, names: str, names_file_name: str, data_source: str, benchmark: bool
+                        , encoding_type : str, short_description : str) -> None:
     logger = logging.getLogger(__name__)
 
     names = handle_names(names, names_file_name, logger)
@@ -61,16 +57,6 @@ def make_processed_data(service: str, names: str, names_file_name: str, data_sou
     logger.info("Loading data name reference")
     data_name_reference = load_data_name_reference()
 
-
-    logger.info("Checking in data name reference for duplicate datasets...")
-
-    duplicate_found = check_duplicates(data_name_reference, service, names, encoding_type)
-
-    if duplicate_found:
-        logger.info("Duplicate found, aborting ...")
-        return
-
-    logger.info("No duplicates found")
     logger.info("Loading raw data")
 
     extension = '.csv'
@@ -88,6 +74,18 @@ def make_processed_data(service: str, names: str, names_file_name: str, data_sou
     data, features_info, features_on_top, features_model, target_variables = (
         processing_function(datas, data_name_reference, encoding_type))
 
+
+    logger.info("Checking in data name reference for duplicate datasets...")
+
+    duplicate_found = check_duplicates(data_name_reference, service, names, encoding_type, len(data))
+
+    if duplicate_found:
+        logger.info("Duplicate found, aborting ...")
+        return
+
+    logger.info("No duplicates found")
+
+
     logger.info("Exporting processed data and feature file")
     processed_data_path = Path(get_processed_data_path(processed_data_name))
     data.to_parquet(processed_data_path)
@@ -101,6 +99,7 @@ def make_processed_data(service: str, names: str, names_file_name: str, data_sou
     data_name_reference[processed_data_name] = {
         'service': service,
         'data_source' : data_source,
+        'short_description' : short_description,
         'raw_data_used': list(names),
         'processed_data_used': [],
         'processed_name': processed_data_name,
@@ -186,8 +185,10 @@ def merge_processed_datas(service: str, names: str, names_file_name: str):
                 raise ValueError("Inconsistent features_model across datasets")
 
         datas.append(data)
-    print(features_on_top_set)
+
+    categorical_columns = datas[0].select_dtypes(include=['category']).columns
     data = pd.concat(datas)
+    data[categorical_columns] = data[categorical_columns].astype('category')
 
     logger.info("Exporting processed data and feature file")
     processed_data_path = Path(get_processed_data_path(processed_data_name))
@@ -203,7 +204,7 @@ def merge_processed_datas(service: str, names: str, names_file_name: str):
     print(features_on_top_set)
 
     data_name_reference[processed_data_name] = {
-        'raw_dat_used': [],
+        'raw_data_used': [],
         'processed_data_used': list(names),
         'processed_name': processed_data_name,
         'num_rows': len(data),
