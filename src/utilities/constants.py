@@ -48,14 +48,14 @@ NETRISK_CASCO_RIDERS = [
     "assistance"
 ]
 
-NETRISK_CASCO_FEATURES_ON_TOP = (['bonus_malus_casco', 'deductible_percentage','deductible_amount', 'payment_frequency',
-                                 'payment_method'] + NETRISK_CASCO_EQUIPMENT_COLS + NETRISK_CASCO_RIDERS)
+#NETRISK_CASCO_FEATURES_ON_TOP = (['bonus_malus_casco', 'deductible_percentage','deductible_amount', 'payment_frequency',
+#                                 'payment_method'] + NETRISK_CASCO_EQUIPMENT_COLS + NETRISK_CASCO_RIDERS)
+NETRISK_CASCO_FEATURES_ON_TOP = []
 NETRISK_CASCO_FEATURES_INFO = ['date_crawled', 'policy_start_date', 'vehicle_trim']
 
 
 NETRISK_CASCO_CATEGORICAL_COLUMNS = ['vehicle_eurotax_code', 'bonus_malus_current', 'bonus_malus_casco', 'vehicle_maker',
                            'vehicle_model', 'vehicle_fuel_type', 'is_recent', 'payment_frequency', 'payment_method']
-
 FEATURES_TO_IGNORE = []
 DEFAULT_TARGET_VARIABLES = ['ALFA_price', 'ALLIANZ_price', 'GENERALI_price', 'GENERTEL_price',
                             'GROUPAMA_price', 'K&AMP;H_price', 'KÖBE_price', 'MAGYAR_price',
@@ -93,3 +93,28 @@ column_to_folder_mapping = {
     'WÁBERER_price': 'waberer_tables',
     'GRÁNIT_price' : 'waberer_tables',
 }
+
+PUNKTA_CATEGORICAL_COLUMNS = ['vehicle_maker', 'vehicle_fuel_type', 'voivodeship', 'county', 'owner_driver_same',
+                              'vehicle_parking_place']
+PUNKTA_FEATURES_INFO = ['date_crawled', 'contractor_birth_year', 'driver_licence_year', 'vehicle_make_year']
+PUNKTA_FEATURES_ON_TOP = []
+PUNKTA_FEATURES_MODEL = ['vehicle_power', 'vehicle_engine_size', 'vehicle_weight_min', 'vehicle_weight_max',
+                         'worth', 'vehicle_age', 'number_of_damages_caused_in_last_5_years', 'mileage_domestic',
+                         'contractor_age', 'licence_at_age', 'driver_experience', 'latitude', 'longitude',
+                         'postal_code_population', 'postal_code_area', 'postal_code_population_density', 'vehicle_weight_to_power_ratio', 'MTU24-contractor_age_factor', 'MTU24-vehicle_age_factor', 'time_delta', 'policy_start_month'] + PUNKTA_CATEGORICAL_COLUMNS
+PUNKTA_FEATURES_MODEL = ['vehicle_engine_size',
+                         'worth', 'number_of_damages_caused_in_last_5_years', 'mileage_domestic'
+                         , 'licence_at_age', 'driver_experience', 'latitude', 'longitude',
+                         'postal_code_population', 'postal_code_area', 'postal_code_population_density', 'vehicle_weight_to_power_ratio', 'MTU24-contractor_age_factor', 'MTU24-vehicle_age_factor', 'time_delta', 'policy_start_month'] + PUNKTA_CATEGORICAL_COLUMNS
+
+PUNKTA_FEATURES_MODEL = [
+                         'worth', 'number_of_damages_caused_in_last_5_years', 'mileage_domestic'
+                         , 'licence_at_age', 'latitude', 'longitude',
+                         'postal_code_population', 'postal_code_area', 'postal_code_population_density'  , 'time_delta', 'policy_start_month'] + PUNKTA_CATEGORICAL_COLUMNS
+
+MUBI_CATEGORICAL = ['vehicle_maker', 'vehicle_fuel_type', 'voivodeship', 'county', 'vehicle_parking_place']
+MUBI_FEATURES_INFO = ['contractor_birth_date', 'contractor_personal_id', 'contractor_driver_licence_date', 'vehicle_make_year']
+MUBI_FEATURES_ON_TOP = []
+MUBI_FEATURES_MODEL = ['vehicle_power', 'vehicle_engine_size', 'vehicle_net_weight', 'vehicle_gross_weight', 'vehicle_age',
+                         'contractor_age', 'licence_at_age', 'driver_experience', 'latitude', 'longitude',
+                         'postal_code_population', 'postal_code_area', 'postal_code_population_density', 'vehicle_weight_to_power_ratio'] + MUBI_CATEGORICAL
