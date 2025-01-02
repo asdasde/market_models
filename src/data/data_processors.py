@@ -1,9 +1,9 @@
 import os
 import sys
 import re
-from venv import logger
 
 import numpy as np
+from sklearn.preprocessing import OrdinalEncoder
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -21,6 +21,19 @@ def cut_brackets_numeric(values: pd.Series, brackets: list) -> pd.Series:
 
 def cut_brackets_categorical(values: pd.Series, brackets: list) -> pd.Series:
     return values
+
+
+def sample_from_distribution(
+        source_data: pd.DataFrame,
+        columns: List[str],
+        target_data: pd.DataFrame) -> pd.DataFrame:
+    clean_source = source_data[columns].dropna()
+    if len(clean_source) > 0:
+        sample_rows = clean_source.sample(n = len(target_data), replace=True)
+        for col in columns:
+            target_data[col] = sample_rows[col].values
+
+    return target_data
 
 
 def make_postal_brackets_mtpl(data: pd.DataFrame, target_variables: list) -> Tuple[pd.DataFrame, List[str]]:
@@ -179,7 +192,6 @@ def make_processed_crawler_data(datas: List[pd.DataFrame], data_name_reference :
                     "vehicle_equipment_xenon_headlights": "vehicle_equipment_xenon_lights"
      }
     for data in datas:
-        print(len(data))
         processed_data = data.drop(columns=legacy_cols_to_drop, errors='ignore')
         processed_data = processed_data.rename(columns=legacy_rename, errors='ignore')
         processed_datas.append(processed_data)
@@ -235,6 +247,10 @@ def make_processed_crawler_data(datas: List[pd.DataFrame], data_name_reference :
         if rider not in data.columns:
             data[rider] = False
         data[rider].fillna(False)
+    for col in data.columns:
+        print(col, data[col].dtype)
+
+    data[NETRISK_CASCO_RIDERS] = data[NETRISK_CASCO_RIDERS].astype(bool)
 
     features_info = NETRISK_CASCO_FEATURES_INFO
     features_on_top = NETRISK_CASCO_FEATURES_ON_TOP
@@ -304,10 +320,11 @@ def make_processed_netrisk_casco_like_data(datas : List[pd.DataFrame], data_name
 
     for equipment in NETRISK_CASCO_EQUIPMENT_COLS:
         data[equipment] = data[equipment].map({'yes' : True, 'no' : False})
-
+    data[NETRISK_CASCO_EQUIPMENT_COLS] = data[NETRISK_CASCO_EQUIPMENT_COLS].astype(bool)
 
     for rider in NETRISK_CASCO_RIDERS:
         data[rider] = data[rider].map({'yes' : True, 'no' : False})
+    data[NETRISK_CASCO_RIDERS] = data[NETRISK_CASCO_RIDERS].astype(bool)
 
 
     features_to_add_bracket = ['contractor_age', 'postal_code']
@@ -319,7 +336,7 @@ def make_processed_netrisk_casco_like_data(datas : List[pd.DataFrame], data_name
     features_info = NETRISK_CASCO_FEATURES_INFO
     features_on_top = NETRISK_CASCO_FEATURES_ON_TOP
 
-    latest_model_training_data = 'netrisk_casco_v1'
+    latest_model_training_data = 'netrisk_casco_v11'
     features_model = reconstruct_features_model(data_name_reference[latest_model_training_data]['features_model'])
 
     data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
@@ -328,75 +345,154 @@ def make_processed_netrisk_casco_like_data(datas : List[pd.DataFrame], data_name
     return data, features_info, features_on_top, features_model, target_variables
 
 
-def make_processed_netrisk_like_data(datas : List[pd.DataFrame], data_name_reference : dict, encoding_type : str) \
-        -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
+def make_processed_netrisk_like_data(
+        datas: List[pd.DataFrame],
+        data_name_reference: dict,
+        encoding_type: str
+) -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
 
     processed_datas = []
     legacy_cols_to_drop = ['CarModel']
-    legacy_rename = {'DriverAge' : 'Age', 'vehicle_model' : "CarModel"}
-    legacy_cast = {'postal_code' : int}
+    legacy_rename = {'DriverAge': 'Age', 'vehicle_model': "CarModel"}
+    legacy_cast = {'postal_code': int}
 
     for data in datas:
         processed_data = data.drop(columns=legacy_cols_to_drop, errors='ignore')
         processed_data = processed_data.rename(columns=legacy_rename, errors='ignore')
-        processed_data = processed_data.dropna(subset = legacy_cast.keys()).astype(legacy_cast)
+        processed_data = processed_data.dropna(subset=legacy_cast.keys()).astype(legacy_cast)
         processed_datas.append(processed_data)
 
+    # Concatenate and prepare data
     target_variables = DEFAULT_TARGET_VARIABLES
-
     data = pd.concat(processed_datas)
+
+    # Filter data for vehicles made from 2014 onwards
     data = data[data['vehicle_make_year'] >= 2014]
 
+    # Remove duplicate columns
     data = data[data.columns.drop_duplicates()]
+
+    # Add is_recent feature
     data = add_is_recent(data)
 
-    if 'deductible_amount' not in data.columns:
-        data['deductible_amount'] = 100000
-    if 'deductible_percentage' not in data.columns:
-        data['deductible_percentage'] = 10
+    # Add missing columns with default values
+    default_columns = {
+        'deductible_amount': 100000,
+        'deductible_percentage': 10,
+        'vehicle_value': 15000 / FORINT_TO_EUR,
+        'bonus_malus_casco': 'CO1'
+    }
 
-    data['vehicle_value'] = 15000 / FORINT_TO_EUR
+    for col, default_val in default_columns.items():
+        if col not in data.columns:
+            data[col] = default_val
+
     data['contractor_age'] = CURRENT_YEAR - data['contractor_birth_year']
     data['vehicle_age'] = CURRENT_YEAR - data['vehicle_make_year']
     data['licence_age'] = CURRENT_YEAR - data['driver_licence_year']
     data['postal_code_2'] = data['postal_code'].apply(lambda x: int(str(x)[:2]))
     data['postal_code_3'] = data['postal_code'].apply(lambda x: int(str(x)[:3]))
 
-    data['bonus_malus_casco'] = 'CO1'
-
     others = load_other('netrisk_casco')
-    others['hungary_postal_codes'] = (others['hungary_postal_codes'][['postal_code', 'latitude', 'longitude']]
-                                     .drop_duplicates(subset=['postal_code']))
+    others['hungary_postal_codes'] = (
+        others['hungary_postal_codes'][['postal_code', 'latitude', 'longitude']]
+        .drop_duplicates(subset=['postal_code'])
+    )
 
-    data = pd.merge(data, others['hungary_postal_codes'], on = 'postal_code', how = 'left')
+    data = pd.merge(data, others['hungary_postal_codes'], on='postal_code', how='left')
 
+    data[NETRISK_CASCO_RIDERS] = None
+    data[NETRISK_CASCO_EQUIPMENT_COLS] = None
 
-    data['deductible_amount'] = data['deductible_amount'].fillna(100000)
-    data['deductible_percentage'] = data['deductible_percentage'].fillna(10)
+    netrisk_data, _, _, _ = load_data('netrisk_casco_v10')
 
-    data[NETRISK_CASCO_EQUIPMENT_COLS] = False
+    sampling_columns = {
+        'deductible': ['deductible_amount', 'deductible_percentage'],
+        'bonus_malus': ['bonus_malus_casco'],
+        'riders': NETRISK_CASCO_RIDERS,
+        'equipment': NETRISK_CASCO_EQUIPMENT_COLS
+    }
+
+    for category, cols in sampling_columns.items():
+        source_df = netrisk_data[cols].dropna()
+        data = sample_from_distribution(source_df, cols, data)
+
+    data['vehicle_model'] = ''
+    data['vehicle_trim'] = ''
+    data['vehicle_eurotax_code'] = ''
 
     features_to_add_bracket = ['contractor_age', 'postal_code']
     data, bracket_features = add_bracket_features(data, features_to_add_bracket, target_variables)
 
-    data['vehicle_model'] = ''
+    data[NETRISK_CASCO_CATEGORICAL_COLUMNS + bracket_features] = data[NETRISK_CASCO_CATEGORICAL_COLUMNS + bracket_features].astype('category')
 
-    categorical_columns = ['bonus_malus_current', 'bonus_malus_casco', 'vehicle_maker', 'vehicle_model', 'vehicle_fuel_type', 'is_recent'] + bracket_features
+    categorical_columns = (
+            ['bonus_malus_current', 'bonus_malus_casco', 'vehicle_maker', 'vehicle_model', 'vehicle_fuel_type',
+             'is_recent']
+            + bracket_features
+    )
     data[categorical_columns] = data[categorical_columns].astype('category')
-    #data = generate_dummies(data, categorical_columns)
 
     features_info = NETRISK_CASCO_FEATURES_INFO
     features_on_top = NETRISK_CASCO_FEATURES_ON_TOP
 
-    latest_model_training_data = 'netrisk_casco_v1'
+    latest_model_training_data = 'netrisk_casco_v11'
     features_model = reconstruct_features_model(data_name_reference[latest_model_training_data]['features_model'])
 
-    data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
+    data, features_model, target_variables = remove_special_chars_from_columns(
+        data,
+        features_model,
+        target_variables
+    )
+
     data = data.set_index('unique_id')
     data = data[features_info + features_on_top + features_model]
+
     return data, features_info, features_on_top, features_model, target_variables
 
+import pandas as pd
 
+def make_is_outlier_columns(data, target_variable):
+    data['vehicle_power_cut'] = pd.cut(data['vehicle_power'].values, bins=20)
+    data['contractor_age_cut'] = pd.cut(data['contractor_age'].values, bins=20)
+
+    threshold = 0.85
+    vehicle_power_threshold = (data.groupby('vehicle_power_cut', observed=False)[target_variable].
+                               transform(lambda x: x.quantile(threshold)))
+    contractor_age_threshold = (data.groupby('contractor_age_cut', observed=False)[target_variable].
+                                transform(lambda x: x.quantile(threshold)))
+
+    outlier_column_name = f'is_outlier_per_{target_variable}'
+    data[outlier_column_name] = (
+        (data[target_variable] >= vehicle_power_threshold) &
+        (data[target_variable] >= contractor_age_threshold)
+    )
+
+    return data, outlier_column_name
+
+def filter_punkta(data : pd.DataFrame) -> pd.DataFrame:
+    original_len = len(data)
+
+    data = data[data['contractor_age'] >= 18]
+    data = data[data['licence_at_age'] >= 15]
+    data = data[data['driver_experience'] >= 0]
+    data = data[data['vehicle_age'] >= 0]
+    data = data[data['vehicle_power'] >= 20]
+    data = data[data['vehicle_engine_size'] >= 100]
+    data = data[data['vehicle_weight_min'] >= 200]
+    data = data[data['worth'] > 100]
+    #data = data[data['date_crawled'].dt.month >= 9]
+    data = data[data['vehicle_usage'] == 'private']
+    data = data[data['vehicle_type'].isin(['Samochody osobowe', 'Osobowy'])]
+    data = data[data['time_delta'] < 100]
+    data = data[data['time_delta'] >= 0]
+
+    filtered_len = len(data)
+    print(f"Filtered out {original_len - filtered_len} rows, for having impossible values,"
+          f" which is {round(1 - filtered_len / original_len, 2)}")
+    return data
+
+from pprint import pprint
 def make_processed_punkta_data(datas : List[pd.DataFrame], data_name_reference : dict, encoding_type : str) \
         -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
 
@@ -414,18 +510,13 @@ def make_processed_punkta_data(datas : List[pd.DataFrame], data_name_reference :
     data = pd.concat(processed_datas)
     data = data.set_index('unique_id')
 
-    target_variables = get_target_variables(data.columns, suffixes = ['-price', '-isolated_price'])
-    log_target_variables = []
-    for i, target_variable in enumerate(target_variables):
-        try:
-            data[f'log_{target_variable}'] = np.log(data[target_variable])
-            log_target_variables.append(f'log_{target_variable}')
-        except Exception as e:
-            print(e)
-    target_variables += log_target_variables
 
     others = load_other('punkta')
-    data = pd.merge(data, others['poland_postal_codes'][['postal_code', 'latitude', 'longitude', 'voivodeship', 'county']], on = 'postal_code')
+
+    geo_data_columns = ['postal_code', 'latitude', 'longitude', 'voivodeship', 'county', 'postal_code_population', 'postal_code_area']
+    data = pd.merge(data, others['poland_postal_codes'][geo_data_columns], on = 'postal_code')
+    data['postal_code_population_density'] = round(data['postal_code_population'] / data['postal_code_area'], 3)
+
 
     data['date_crawled'] = pd.to_datetime(data['calculation_time'])
     data['vehicle_maker'] = data['vehicle_maker'].apply(lambda x : x + '-' if any([c in x for c in ['[', ']']]) else x)
@@ -433,37 +524,35 @@ def make_processed_punkta_data(datas : List[pd.DataFrame], data_name_reference :
     data['contractor_age'] = CURRENT_YEAR - data['contractor_birth_year']
     data['licence_at_age'] = data['driver_licence_year'] - data['contractor_birth_year']
     data['driver_experience'] = CURRENT_YEAR - data['driver_licence_year']
-
-    categorical_columns = ['vehicle_maker', 'vehicle_fuel_type', 'voivodeship', 'county', 'owner_driver_same', 'vehicle_parking_place']
-    for categorical_col in categorical_columns:
-        data[categorical_col] = data[categorical_col].astype('category')
-    #data = generate_dummies(data, categorical_columns)
-
-    features_info = ['date_crawled', 'contractor_birth_year', 'driver_licence_year']
-    features_on_top = []
-    features_model = (['vehicle_power', 'vehicle_engine_size', 'vehicle_weight_min', 'vehicle_weight_max',
-                      'vehicle_make_year', 'number_of_damages_caused_in_last_5_years', 'mileage_domestic',
-                      'contractor_age', 'licence_at_age', 'driver_experience', 'latitude', 'longitude']
-                      + categorical_columns
-                      + data.filter(like ='__dummy').columns.to_list())
+    data['vehicle_weight_to_power_ratio'] = data['vehicle_weight_max'] / data['vehicle_power']
 
 
-    original_len = len(data)
+    data = pd.merge(data, others['mtu_contractor_age_factors'], how = 'left')
+    data = pd.merge(data, others['mtu_vehicle_age_factors'], how = 'left')
+    data['policy_start_month'] = data['policy_start_date'].dt.month
 
-    data = data[data['contractor_age'] >= 18]
-    data = data[data['licence_at_age'] >= 15]
-    data = data[data['driver_experience'] >= 0]
-    data = data[data['vehicle_age'] >= 0]
-    data = data[data['vehicle_power'] >= 20]
-    data = data[data['vehicle_engine_size'] >= 100]
-    data = data[data['vehicle_weight_min'] >= 200]
+    data['time_delta'] = (data['policy_start_date'] - pd.to_datetime(data['calculation_time'])).dt.days
+    pprint(data.head())
 
-    data = data[data['vehicle_usage'] == 'private']
-    data = data[data['vehicle_type'].isin(['Samochody osobowe', 'Osobowy'])]
+    target_variables = get_target_variables(data.columns, suffixes=['-price', '-isolated_price'])
+    log_target_variables = []
+    is_outlier_columns = []
+    for i, target_variable in enumerate(target_variables):
+        data, added_col = make_is_outlier_columns(data, target_variable)
+        is_outlier_columns.append(added_col)
+        if data[target_variable].min() > 1:
+            data[f'log_{target_variable}'] = np.log(data[target_variable])
+            log_target_variables.append(f'log_{target_variable}')
 
-    filtered_len = len(data)
-    print(f"Filtered out {original_len - filtered_len} rows, for having impossible values,"
-          f" which is {round(1 - filtered_len / original_len, 2)}")
+    target_variables += log_target_variables
+
+    data[PUNKTA_CATEGORICAL_COLUMNS] = data[PUNKTA_CATEGORICAL_COLUMNS].astype('category')
+
+    features_info = PUNKTA_FEATURES_INFO
+    features_on_top = PUNKTA_FEATURES_ON_TOP
+    features_model = (PUNKTA_FEATURES_MODEL + is_outlier_columns + data.filter(like ='__dummy').columns.to_list())
+
+    data = filter_punkta(data)
 
     data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
     data = data[features_info + features_on_top + features_model + target_variables]
@@ -472,10 +561,10 @@ def make_processed_punkta_data(datas : List[pd.DataFrame], data_name_reference :
     data = data[list(set(data.columns))]
     return data, features_info, features_on_top, features_model, target_variables
 
-def make_processed_generator_data(datas : List[pd.DataFrame], data_name_reference : dict, encoding_type : str) \
-        -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
+
+def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : dict, encoding_type : str):
     processed_datas = []
-    legacy_cols_to_drop = ['id_case', 'BonusMalusCode', 'CarMakerCategory', 'Category', 'WÁBERER_price_PostalCode_cut', 'Longitude', 'Latitude']
+    legacy_cols_to_drop = []
     legacy_rename = {}
     legacy_cast = {}
 
@@ -486,54 +575,134 @@ def make_processed_generator_data(datas : List[pd.DataFrame], data_name_referenc
         processed_datas.append(processed_data)
 
     data = pd.concat(processed_datas)
-    data['id_case'] = range(len(data))
 
-    data = data.set_index('id_case')
+    others = load_other('mubi')
+
+    geo_data_columns = ['postal_code', 'latitude', 'longitude', 'voivodeship', 'county', 'postal_code_population', 'postal_code_area']
+    data = pd.merge(data, others['poland_postal_codes'][geo_data_columns], left_on = 'contractor_postal_code', right_on='postal_code')
+    data['postal_code_population_density'] = round(data['postal_code_population'] / data['postal_code_area'], 3)
+
+
+    #data['date_crawled'] = pd.to_datetime(data['calculation_time'])
+    #data['vehicle_maker'] = data['vehicle_maker'].apply(lambda x : x + '-' if any([c in x for c in ['[', ']']]) else x)
+    data['contractor_birth_year'] = data['contractor_birth_date'].apply(lambda x : int(x.split('_')[0]))
+    data['contractor_driver_licence_year'] = data['contractor_driver_licence_date'].apply(lambda x : int(x.split('_')[0]))
+    data['vehicle_age'] = CURRENT_YEAR - data['vehicle_make_year']
+    data['contractor_age'] = (CURRENT_YEAR - data['contractor_birth_year']).astype(int)
+    data['licence_at_age'] = (data['contractor_driver_licence_year'] - data['contractor_birth_year']).astype(int)
+    data['driver_experience'] = (CURRENT_YEAR - data['contractor_driver_licence_year']).astype(int)
+    data['vehicle_weight_to_power_ratio'] = data['vehicle_gross_weight'] / data['vehicle_power']
+
+    target_variables = get_target_variables(data.columns, suffixes=['-price', '-isolated_price'])
+    data[MUBI_CATEGORICAL] = data[MUBI_CATEGORICAL].astype('category')
+
+
+    features_info = MUBI_FEATURES_INFO
+    features_on_top = MUBI_FEATURES_ON_TOP
+    features_model = (
+            MUBI_FEATURES_MODEL +
+           data.filter(like ='__dummy').columns.to_list()
+    )
+
+    data['pesel_last_digit'] = data['contractor_personal_id'].apply(lambda x : int(str(x)[-1]))
+    data['generali_pesel_ab_test'] = data['pesel_last_digit'].apply(lambda x : 0 if (x == 0) or (x < 8 and x % 2) else 1)
+
+    for col in [col for col in target_variables if 'GENERALI' in col or 'PROAMA' in col]:
+        data[col] = data[col] - 0.1 * data[col] * data['generali_pesel_ab_test']
+
+    data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
+    data = data[features_info + features_on_top + features_model + target_variables]
+
+    data = data.loc[:,~data.columns.duplicated()].copy()
+    data = data[list(set(data.columns))]
+    return data, features_info, features_on_top, features_model, target_variables
+
+
+def make_processed_generator_data(
+        datas: List[pd.DataFrame],
+        data_name_reference: dict,
+        encoding_type: str
+) -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
+
+    processed_datas = []
+    legacy_cols_to_drop = ['id_case', 'BonusMalusCode', 'CarMakerCategory', 'Category', 'WÁBERER_price_PostalCode_cut',
+                           'Longitude', 'Latitude', 'latitude', 'longitude']
+    legacy_rename = {}
+    legacy_cast = {}
+
+    for data in datas:
+        processed_data = data.drop(columns=legacy_cols_to_drop, errors='ignore')
+        processed_data = processed_data.rename(columns=legacy_rename, errors='ignore')
+        processed_data = processed_data.dropna(subset=legacy_cast.keys()).astype(legacy_cast)
+        processed_datas.append(processed_data)
+
+    data = pd.concat(processed_datas)
+    data['unique_id'] = range(len(data))  # Changed from id_case to unique_id to match Signal Iduna
+    data = data.set_index('unique_id')
 
     target_variables = DEFAULT_TARGET_VARIABLES
 
-    data = add_is_recent(data)
+    default_columns = {
+        'deductible_amount': None,
+        'deductible_percentage': None,
+        'bonus_malus_casco': None
+    }
 
-    if 'deductible_amount' not in data.columns:
-        data['deductible_amount'] = 100000
-    if 'deductible_percentage' not in data.columns:
-        data['deductible_percentage'] = 10
+    for col, default_val in default_columns.items():
+        if col not in data.columns:
+            data[col] = default_val
 
-
-    data['PostalCode2'] = data['PostalCode'].apply(lambda x: int(str(x)[:2]))
-    data['PostalCode3'] = data['PostalCode'].apply(lambda x: int(str(x)[:3]))
+    data['postal_code_2'] = data['postal_code'].apply(lambda x: int(str(x)[:2]))
+    data['postal_code_3'] = data['postal_code'].apply(lambda x: int(str(x)[:3]))
 
     others = load_other('netrisk_casco')
-    geo_data_rename = {'latitude': 'Latitude', 'longitude': 'Longitude', 'postal_code': 'PostalCode'}
-    others['hungary_postal_codes'] = (others['hungary_postal_codes'][['postal_code', 'latitude', 'longitude']]
-                                      .drop_duplicates(subset=['postal_code']))
-    others['hungary_postal_codes'] = others['hungary_postal_codes'].rename(columns=geo_data_rename)
-    data = pd.merge(data, others['hungary_postal_codes'], on='PostalCode')
+    others['hungary_postal_codes'] = (
+        others['hungary_postal_codes'][['postal_code', 'latitude', 'longitude']]
+        .drop_duplicates(subset=['postal_code'])
+    )
+    data = pd.merge(data, others['hungary_postal_codes'], on='postal_code', how='left')
+    pprint(data)
+    data = add_is_recent(data)
 
-    data['deductible_amount'] = data['deductible_amount'].fillna(100000)
-    data['deductible_percentage'] = data['deductible_percentage'].fillna(10)
-    data[NETRISK_CASCO_EQUIPMENT_COLS] = False
+    netrisk_data, _, _, _ = load_data('netrisk_casco_v10')
 
-    features_to_add_bracket = ['Age', 'PostalCode']
-    data, bracket_features = add_bracket_features(data, features_to_add_bracket, target_variables)
+    # Sample distributions for specific columns
+    sampling_columns = {
+        'deductible': ['deductible_amount', 'deductible_percentage'],
+        'bonus_malus': ['bonus_malus_casco'],
+        'riders': NETRISK_CASCO_RIDERS,
+        'equipment': NETRISK_CASCO_EQUIPMENT_COLS
+    }
 
-    categorical_columns = ['BonusMalus', 'CarMake', 'CarModel', 'isRecent'] + bracket_features
-    #data = generate_dummies(data, categorical_columns)
-    data[categorical_columns] = data[categorical_columns].astype('category')
+    for category, cols in sampling_columns.items():
+        # Create missing mask for the specific columns
+        source_df = netrisk_data[cols].dropna()
+        data = sample_from_distribution(source_df, cols, data)
+
+    data['vehicle_trim'] = ''
+    data['vehicle_eurotax_code'] = ''
+
+    data, bracket_features = add_bracket_features(data, ['contractor_age', 'postal_code'], target_variables)
+
+    data[NETRISK_CASCO_CATEGORICAL_COLUMNS + bracket_features] = data[NETRISK_CASCO_CATEGORICAL_COLUMNS + bracket_features].astype('category')
+
 
     features_info = NETRISK_CASCO_FEATURES_INFO
     features_on_top = NETRISK_CASCO_FEATURES_ON_TOP
 
-    latest_model_training_data = 'netrisk_casco_v1'
+    latest_model_training_data = 'netrisk_casco_v11'
     features_model = reconstruct_features_model(data_name_reference[latest_model_training_data]['features_model'])
 
-    data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
-    #diff = sorted(list(set(features_model).difference(data.columns)))
-    #diff = [x for x in diff if x.endswith('__dummy')]
-    #data[diff] = False
+    # Remove special characters from columns
+    data, features_model, target_variables = remove_special_chars_from_columns(
+        data,
+        features_model,
+        target_variables
+    )
 
-
+    # Select final columns
     data = data[features_info + features_on_top + features_model]
+
     return data, features_info, features_on_top, features_model, target_variables
 
 
@@ -555,14 +724,14 @@ def make_processed_signal_iduna_data(datas: List[pd.DataFrame], data_name_refere
     data = pd.concat(processed_datas)
 
     if 'deductible_amount' not in data.columns:
-        data['deductible_amount'] = 100000
+        data['deductible_amount'] = None
     if 'deductible_percentage' not in data.columns:
-        data['deductible_percentage'] = 10
+        data['deductible_percentage'] = None
     if 'vehicle_value' not in data.columns:
         data['vehicle_value'] = 15000 / FORINT_TO_EUR
 
 
-    data['bonus_malus_casco'] = 'C01'
+    data['bonus_malus_casco'] = None
     data['contractor_age'] = CURRENT_YEAR - data['contractor_birth_year']
     data['vehicle_age'] = CURRENT_YEAR - data['vehicle_make_year']
     data['licence_age'] = CURRENT_YEAR - data['driver_licence_year']
@@ -577,10 +746,22 @@ def make_processed_signal_iduna_data(datas: List[pd.DataFrame], data_name_refere
 
     data = add_is_recent(data)
 
-    data['deductible_amount'] = data['deductible_amount'].fillna(100000)
-    data['deductible_percentage'] = data['deductible_percentage'].fillna(10)
-    data[NETRISK_CASCO_EQUIPMENT_COLS] = False
+    netrisk_data, _, _, _ = load_data('netrisk_casco_v10')
 
+    sampling_columns = {
+        'deductible': ['deductible_amount', 'deductible_percentage'],
+        'bonus_malus': ['bonus_malus_casco'],
+        'riders': NETRISK_CASCO_RIDERS,
+        'equipment': NETRISK_CASCO_EQUIPMENT_COLS
+    }
+
+    for category, cols in sampling_columns.items():
+        source_df = netrisk_data[cols].dropna()
+        data = sample_from_distribution(source_df,cols,data)
+
+    data['vehicle_trim'] = ''
+    data['vehicle_eurotax_code'] = ''
+    data[NETRISK_CASCO_CATEGORICAL_COLUMNS] = data[NETRISK_CASCO_CATEGORICAL_COLUMNS].astype('category')
     data, bracket_features = add_bracket_features(data, ['contractor_age', 'postal_code'], target_variables)
 
     categorical_columns = ['bonus_malus_current', 'bonus_malus_casco', 'vehicle_maker', 'vehicle_model', 'vehicle_fuel_type', 'is_recent'] + bracket_features
@@ -590,11 +771,11 @@ def make_processed_signal_iduna_data(datas: List[pd.DataFrame], data_name_refere
     features_info = NETRISK_CASCO_FEATURES_INFO
     features_on_top = NETRISK_CASCO_FEATURES_ON_TOP
 
-    latest_model_training_data = 'netrisk_casco_v1'
+    latest_model_training_data = 'netrisk_casco_v11'
     features_model = reconstruct_features_model(data_name_reference[latest_model_training_data]['features_model'])
     data = data.set_index('unique_id')
     data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
-    data = data[features_info + features_on_top + features_model + target_variables]
+    data = data[features_info + features_on_top + features_model]
     return data, features_info, features_on_top, features_model, target_variables
 
 def make_processed_zmarta_data(datas: pd.DataFrame, data_name_reference : dict, encoding_type : str) -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:

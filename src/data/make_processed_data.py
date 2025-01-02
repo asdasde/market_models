@@ -21,12 +21,17 @@ DATA_SOURCE_HANDLER = {
     "netrisk_bought_data":  make_processed_netrisk_casco_like_data,
     "punkta_data":  make_processed_punkta_data,
     "zmarta_data":  make_processed_zmarta_data,
+    'mubi': make_processed_mubi_data,
 }
 
-def check_duplicates(data_name_reference : dict, service, names, encoding_type, data_len):
+def check_duplicates(data_name_reference : dict, new_entry : dict):
     for entry in data_name_reference.values():
-        if (names == set(entry['raw_data_used']) and service == entry['service'] and
-                           encoding_type == entry["encoding_type"] and data_len == entry['num_rows']):
+        c1 = set(new_entry['raw_data_used']) == set(entry['raw_data_used'])
+        c2 = new_entry['service'] == entry['service']
+        c3 = 'encoding_type' in entry.keys() and new_entry['encoding_type'] == entry["encoding_type"]
+        c4 = new_entry['num_rows'] == entry['num_rows']
+        c5 = new_entry['features_model'] == entry['features_model']
+        if c1 and c2 and c3 and c4 and c5:
             return True
     return False
 
@@ -60,7 +65,7 @@ def make_processed_data(service: str, names: str, names_file_name: str, data_sou
     logger.info("Loading raw data")
 
     extension = '.csv'
-    if data_source in ['quotes_data', 'punkta_data', 'netrisk_bought_data']:
+    if data_source in ['quotes_data', 'punkta_data', 'netrisk_bought_data', 'mubi']:
         extension = '.parquet'
 
     paths = [get_raw_data_path(f'{service}{name}', extension=extension) for name in names]
@@ -74,29 +79,9 @@ def make_processed_data(service: str, names: str, names_file_name: str, data_sou
     data, features_info, features_on_top, features_model, target_variables = (
         processing_function(datas, data_name_reference, encoding_type))
 
-
-    logger.info("Checking in data name reference for duplicate datasets...")
-
-    duplicate_found = check_duplicates(data_name_reference, service, names, encoding_type, len(data))
-
-    if duplicate_found:
-        logger.info("Duplicate found, aborting ...")
-        return
-
-    logger.info("No duplicates found")
-
-
-    logger.info("Exporting processed data and feature file")
-    processed_data_path = Path(get_processed_data_path(processed_data_name))
-    data.to_parquet(processed_data_path)
-
-    logger.info("Adding it to the data name reference")
-    file_size_mb = processed_data_path.stat().st_size / 1_048_576  # Convert bytes to MB
-    file_size_mb = f"{file_size_mb:.1f}"  # Format to 1 decimal place
-
     features_model = extract_features_with_dtype(data, features_model)
 
-    data_name_reference[processed_data_name] = {
+    new_entry = {
         'service': service,
         'data_source' : data_source,
         'short_description' : short_description,
@@ -105,7 +90,7 @@ def make_processed_data(service: str, names: str, names_file_name: str, data_sou
         'processed_name': processed_data_name,
         'num_rows': len(data),
         'date_processed': datetime.now().strftime('%Y-%m-%d %H:%M'),
-        'file_size_mb': file_size_mb,
+        'file_size_mb': None,
         'is_benchmark': benchmark,
         'index_column_name': data.index.name,
         'encoding_type' : encoding_type,
@@ -115,6 +100,28 @@ def make_processed_data(service: str, names: str, names_file_name: str, data_sou
         'target_variables': target_variables,
     }
 
+    logger.info("Checking in data name reference for duplicate datasets...")
+
+    duplicate_found = check_duplicates(data_name_reference, new_entry)
+
+    if duplicate_found:
+        logger.info("Duplicate found, aborting ...")
+        return
+
+    logger.info("No duplicates found")
+
+    logger.info("Exporting processed data and feature file")
+
+    processed_data_path = Path(get_processed_data_path(processed_data_name))
+    data.to_parquet(processed_data_path)
+
+    file_size_mb = processed_data_path.stat().st_size / 1_048_576  # Convert bytes to MB
+    file_size_mb = f"{file_size_mb:.1f}"  # Format to 1 decimal place
+    new_entry['file_size_mb'] = file_size_mb
+
+    logger.info("Adding it to the data name reference")
+
+    data_name_reference[processed_data_name] = new_entry
     export_data_name_reference(data_name_reference)
     logger.info("Data name reference updated successfully.")
     logger.info('Checking if everything went well by trying to load the data ...')
@@ -204,6 +211,7 @@ def merge_processed_datas(service: str, names: str, names_file_name: str):
     print(features_on_top_set)
 
     data_name_reference[processed_data_name] = {
+        'service': service,
         'raw_data_used': [],
         'processed_data_used': list(names),
         'processed_name': processed_data_name,

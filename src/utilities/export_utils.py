@@ -1,10 +1,11 @@
 import os
 import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hyperopt import Trials
 from utilities.files_utils import *
 from utilities.load_utils import *
+from utilities.path_utils import *
+
 
 def export_sampled_data(sampled_data : pd.DataFrame, service : str, params_v : str, custom_name : str = None):
     sampled_data_name = get_sampled_data_name(service, params_v) + custom_name

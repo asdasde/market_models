@@ -28,6 +28,7 @@ def predict_all_models(data : pd.DataFrame, train_data_name : str, apply_presenc
 
     for target_variable in DEFAULT_TARGET_VARIABLES + ['rank1_price']:
         model_name = get_model_name(train_data_name, target_variable)
+        print(model_name)
         presence_model_name = get_presence_model_name(train_data_name, target_variable)
 
         model = load_model(model_name)

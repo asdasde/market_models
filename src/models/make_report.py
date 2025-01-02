@@ -2,6 +2,7 @@ import os
 import random
 import sys
 import click
+import numpy as np
 import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
 from hyperopt import Trials
@@ -159,7 +160,7 @@ def partial_dependence_analysis(model: xgboost.Booster, data: pd.DataFrame, feat
         if feature in FEATURES_TO_SKIP_PDP:
             continue
 
-        if pd.api.types.is_categorical_dtype(data[feature]) or data[feature].dtype == 'object':
+        if isinstance(data[feature].dtype, CategoricalDtype) or data[feature].dtype == 'object':
             feature_range = data[feature].dropna().unique()
         else:
             feature_range = np.linspace(data[feature].min(), data[feature].max(), grid_resolution)
@@ -395,7 +396,11 @@ def plot_real_vs_predicted_by_feature_other(data: pd.DataFrame, feature: str,
 def plot_real_vs_predicted_by_feature(data_p: pd.DataFrame, predictions : pd.Series, feature: str,
                                       target_variable: str, report_resources_path: Path, idx : int):
 
-    data = data_p[[feature, target_variable]].copy()
+    if feature != target_variable:
+        data = data_p[[feature, target_variable]].copy()
+    else:
+        data = data_p[[feature]].copy()
+
 
     data['predicted'] = predictions
     data['error'] = abs(data[target_variable].values - data['predicted'].values) / data[target_variable].values * 100
@@ -583,6 +588,9 @@ def generate_report_util(
     data = reconstruct_categorical_variables(data)
     features_all = features_model + features_info
 
+    if target_variable.startswith('log_'):
+        data[target_variable] = np.exp(data[target_variable])
+
     real = data[target_variable]
     errors = real - out_of_sample_predictions
     errors_percentage = errors / data[target_variable] * 100
@@ -590,7 +598,6 @@ def generate_report_util(
     logging.info("Preparing directories for the report.")
     prepare_dir(report_path)
     prepare_dir(report_resources_path)
-
 
 
     table_of_contents = DEFAULT_REPORT_TABLE_OF_CONTENTS
@@ -626,7 +633,7 @@ def generate_report_util(
                                                                                     report_resources_path, idx),
         "Real vs Predicted Quantiles by Feature": lambda idx: [
             plot_real_vs_predicted_by_feature(data, out_of_sample_predictions, feature, target_variable,
-                                              report_resources_path, idx) for feature in features_all],
+                                              report_resources_path, idx) for feature in features_all + [target_variable]],
         "Learning Curve": lambda idx: plot_learning_curve(trials, report_resources_path, idx),
         "Shapley Summary": lambda idx: plot_shap_summary(shap_values, data, features_model, report_resources_path, idx)
                                         if use_shap else None,
@@ -654,6 +661,7 @@ def generate_report(data_name: str, target_variable: str, use_pdp: bool, use_sha
     report_resources_path = Path(get_report_resource_path(model_name))
 
     data, features_info, features_on_top, features_model = load_data(data_name, target_variable)
+
     model = load_model(model_name)
     out_of_sample_predictions = load_out_of_sample_predictions(model_name, target_variable)
     model_trials = load_hyperopt_trials(model_name)

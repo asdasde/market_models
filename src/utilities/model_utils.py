@@ -1,15 +1,12 @@
-import os
-import xgboost
-
 import numpy as np
-import pandas as pd
 
 from enum import Enum
 
-from numpy.ma.core import absolute
+import pandas as pd
+import xgboost
 
-from utilities.path_constants import MODELS_PATH
 from utilities.load_utils import *
+import operator
 
 
 class ModelType(Enum):
@@ -27,19 +24,6 @@ def is_compatible(model: xgboost.Booster, data: pd.DataFrame):
     print(set(expected_features).difference(data.columns))
     return set(expected_features).issubset(data.columns)
 
-
-def get_all_models_trained_on(data_name: str, model_type: ModelType) -> list:
-    model_names = []
-    for model_name in os.listdir(MODELS_PATH):
-        if model_type == ModelType.MARKET_MODEL:
-            if ModelType.ERROR_MODEL.value not in model_name and ModelType.PRESENCE_MODEL.value not in model_name and data_name in model_name:
-                model_names.append(model_name)
-        else:
-            if model_type.value in model_name and data_name in model_name:
-                model_names.append(model_name)
-    return model_names
-
-import re
 def make_d_matrix(data_features: pd.DataFrame,
                   data_target: pd.DataFrame,
                   is_classification: bool) -> xgboost.DMatrix:
@@ -50,30 +34,56 @@ def make_d_matrix(data_features: pd.DataFrame,
         return xgboost.DMatrix(data_features, data_target, enable_categorical=True)
 
 
-def predict(model: xgboost.Booster, data: pd.DataFrame):
-    d_matrix = xgboost.DMatrix(data=data, enable_categorical=True)
-    predictions = model.predict(d_matrix, output_margin=True)
-    return predictions
-
-
 def apply_threshold(arr: np.array, threshold: float):
     return (arr > threshold).astype(bool)
 
 
-def apply_on_top(data : pd.DataFrame, target_variable : str, on_top : pd.DataFrame) -> np.array:
+
+
+def merge_range(df, factors, col):
+    merged = pd.merge(
+        df,
+        factors,
+        on=['current_target'],
+        suffixes=['', '_f'],
+        how = 'left'
+    )
+    merged = merged[
+        (merged[col] >= merged[f"{col}_f"].apply(lambda x: eval(x)[0] if x is not None else False)) &
+        (merged[col] <= merged[f"{col}_f"].apply(lambda x: eval(x)[1] if x is not None else False))
+    ]
+    return merged.drop(columns=[f"{col}_f"])
+
+
+
+
+def apply_on_top(data: pd.DataFrame,
+                 target_variable: str,
+                 target_variable_orig : str,
+                 on_top: pd.DataFrame,
+                 reverse : bool = False) -> pd.DataFrame:
+
+
+    data['temp_id'] = range(len(data))
+
     corrected_target = f'corrected_{target_variable}'
+
     factor_types = ['absolute', 'relative']
 
+    operations = {
+        'absolute' : operator.add if reverse else operator.sub,
+        'relative' : operator.mul if reverse else operator.truediv
+    }
+
     data_c = data.copy()
-    data_c['current_target'] = target_variable
-    data_c['current_target'] = target_variable
+    data_c['current_target'] = target_variable_orig
+    on_top = on_top[on_top['current_target'] == target_variable_orig]
     data_c[corrected_target] = data_c[target_variable]
 
-    for ft in factor_types:
+    for factor_type in factor_types:
+        same_factor_type = on_top[on_top['factor_type'] == factor_type]
 
-        same_ft = on_top[on_top['factor_type'] == ft]
-
-        for name, group in same_ft.groupby('features'):
+        for name, group in same_factor_type.groupby('features'):
 
             features = group.features.values[0]
 
@@ -83,26 +93,54 @@ def apply_on_top(data : pd.DataFrame, target_variable : str, on_top : pd.DataFra
             if isinstance(features, tuple):
                 features = list(features)
 
-            print(features)
-
             named_factor = f'factor_{features}'
-
-            rename_dict = {k : v for k, v in enumerate(features)}
+            rename_dict = {k: v for k, v in enumerate(features)}
+            merge_type = group['merge_type'].iloc[0]
 
             unpacked = group['feature_values'].apply(pd.Series).rename(columns=rename_dict)
             unpacked = pd.concat([unpacked, group], axis=1)
 
 
 
-            data_c = pd.merge(data_c, unpacked[features + ['current_target', 'factor']],
-                            on= features + ['current_target'], how = 'left')
+            if merge_type == 'range':
+                data_c = merge_range(data_c, unpacked, features[0])
+            else:
+                data_c = pd.merge(
+                    data_c,
+                    unpacked[features + ['current_target', 'factor']],
+                    on = features + ['current_target'],
+                    how='left'
+                )
 
             data_c = data_c.rename(columns={'factor': named_factor})
-            data_c[named_factor] = data_c[named_factor].fillna(1 if ft == 'relative' else 0)
+            data_c[named_factor] = data_c[named_factor].fillna(1 if factor_type == 'relative' else 0)
 
-            if ft == 'absolute':
-                data_c[corrected_target] = data_c[corrected_target] - data_c[named_factor]
-            else:
-                data_c[corrected_target] = data_c[corrected_target] / data_c[named_factor]
+            operation = operations[factor_type]
+            data_c[corrected_target] = operation(data_c[corrected_target], data_c[named_factor])
 
-    return data_c
+    data = pd.merge(data, data_c[['temp_id', corrected_target]], on = 'temp_id')
+    data[f'{target_variable}_orig'] = data[target_variable]
+    data[target_variable] = data[f'corrected_{target_variable}']
+
+    return data
+
+
+def predict(model: xgboost.Booster, data: pd.DataFrame) -> np.ndarray:
+    d_matrix = xgboost.DMatrix(data=data, enable_categorical=True)
+    print(pd.DataFrame.sparse.from_spmatrix(d_matrix.get_data(), columns = data.columns))
+    predictions = model.predict(d_matrix, output_margin=True)
+    print(predictions)
+    return predictions
+
+def predict_on_top(
+        model : xgboost.Booster,
+        data : pd.DataFrame,
+        on_top : pd.DataFrame,
+        target_variable_orig : str) -> np.ndarray:
+
+    data_c = data.copy()
+    data_c['predictions'] = predict(model, data)
+    data = apply_on_top(data_c, 'predictions', target_variable_orig, on_top, reverse = True)
+    return data['corrected_predictions'].values
+
+

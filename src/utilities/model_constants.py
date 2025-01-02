@@ -6,7 +6,7 @@ TEST_SIZE = 0.1
 RANDOM_STATE = 42
 ERROR_MODEL_CLASSIFICATION_THRESHOLD = 0.8
 PRESENCE_MODEL_CLASSIFICATION_THRESHOLD = 0.5
-MAX_EVALS =60
+MAX_EVALS = 20
 
 DEFAULT_PARAMS_REGRESSION = {
     'objective': 'reg:absoluteerror',
@@ -67,19 +67,21 @@ DEFAULT_PARAMS_CLASSIFICATION = {
 }
 
 SPACE_REGRESSION = {
-    'objective': hp.choice('objective', ['reg:absoluteerror']),
+    'objective': hp.choice('objective', ['reg:squarederror']),
     'booster': hp.choice('booster', ['gbtree']),
     'learning_rate': hp.uniform('learning_rate', 0.01, 0.3),
     'n_estimators': hp.choice('n_estimators', np.arange(100, 1600, 50, dtype=int)),
     'max_depth': hp.choice('max_depth', np.arange(2, 11, dtype=int)),
     'min_child_weight': hp.choice('min_child_weight', np.arange(1, 11, dtype=int)),
-    'subsample': hp.uniform('subsample', 0.5, 1),
-    'colsample_bytree': hp.uniform('colsample_bytree', 0.5, 1),
+    'subsample': hp.uniform('subsample', 0.1, 1),
+    'colsample_bytree': hp.uniform('colsample_bytree', 0.1, 1),
     'gamma': hp.uniform('gamma', 0, 2),
     'lambda': hp.uniform('lambda', 0, 1),
-    'reg_alpha': hp.uniform('reg_alpha', 40, 180),
+
+
+    'reg_alpha': hp.uniform('reg_alpha', 0, 180),
     'reg_lambda': hp.uniform('reg_lambda', 0, 1),
-    'seed': 0,
+    'seed': 42,
 }
 
 

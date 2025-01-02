@@ -1,11 +1,9 @@
-from curses.ascii import isdigit
-from pathlib import Path
+from xgboost import train
 
-from models.train_model import train_model
 from utilities.path_constants import *
 from utilities.constants import column_to_folder_mapping
 from datetime import datetime
-
+from curses.ascii import isdigit
 
 
 def get_raw_data_path(data_name: str, extension = '.csv') -> Path:
@@ -54,6 +52,19 @@ def get_all_models_on_train_data(train_data_name : str, is_presence_model : bool
         if c1 and c2 and c3:
             model_names.append(model_name)
     return model_names
+
+def get_all_models_on_target_variable(target_variable : str, is_presence_model : bool) -> list:
+
+    model_names = []
+    for model_path in MODELS_PATH.glob('*'):
+        model_name = model_path.stem
+        c1 = target_variable in model_name
+        c2 = len(model_name) >= len(target_variable) and not isdigit(model_name[len(target_variable)])
+        c3 = (is_presence_model == ('presence_model' in model_name))
+        if c1 and c2 and c3:
+            model_names.append(model_name)
+    return model_names
+
 
 def get_model_path(model_name: str) -> Path:
     return get_model_directory(model_name) / f'{model_name}.json'

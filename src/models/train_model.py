@@ -3,11 +3,13 @@ import sys
 from copyreg import pickle
 
 import click
-
+import time
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Union, final
 
 import hyperopt.tpe
+import numpy as np
+import pandas as pd
 from dotenv import find_dotenv, load_dotenv
 from mlxtend.classifier import OneRClassifier
 from hyperopt import STATUS_OK, SparkTrials, Trials, fmin, tpe, rand
@@ -16,12 +18,11 @@ from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.metrics import (
     mean_absolute_error,
     mean_absolute_percentage_error,
-    mean_squared_error,
+    root_mean_squared_error,
     accuracy_score,
     log_loss,
-    f1_score as f_score,
+    f1_score
 )
-
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -39,7 +40,8 @@ def model_train(train_data: pd.DataFrame,
                 features: list,
                 target_variable: str,
                 is_classification: bool,
-                param: dict = None) -> xgboost.Booster:
+                param: dict = None) -> Tuple[xgboost.Booster, np.ndarray, Dict]:
+
     param_ = None
     if param is None:
         if is_classification:
@@ -51,156 +53,194 @@ def model_train(train_data: pd.DataFrame,
 
     dtrain = make_d_matrix(train_data[features], train_data[target_variable], is_classification=is_classification)
     dtest = make_d_matrix(test_data[features], test_data[target_variable], is_classification=is_classification)
-    num_rounds = param_['n_estimators']
-    del param_['n_estimators']
-    param_['max_depth'] = int(param_['max_depth'])
-    param_['eval_metric'] = 'aucpr' if is_classification else 'mae'
     eval_list = [(dtrain, 'train'), (dtest, 'eval')]
     evals_result = {}
-    bst =  xgboost.train(param_, dtrain, num_boost_round=num_rounds, early_stopping_rounds=300, evals=eval_list,
-                         verbose_eval=False, evals_result=evals_result)
-    return bst
 
-def merge_predictions(model: xgboost.Booster,
-                      test_data: pd.DataFrame,
-                      features: list,
-                      target_variable: str,
-                      is_classification: bool) -> pd.DataFrame:
-    pred_target_variable = f'predicted_{target_variable}'
-    output = test_data.copy()
+    num_rounds = param_['n_estimators']
+    del param_['n_estimators']
 
-    dtest = make_d_matrix(test_data[features], test_data[target_variable], is_classification=is_classification)
-    output[pred_target_variable] = model.predict(dtest)
+    param_['eval_metric'] = ['logloss', 'aucpr'] if is_classification else ['mae', 'mape', 'rmse']
 
-    output['error'] = output[target_variable] - output[pred_target_variable]
-    output['percentageError'] = output['error'] / output[target_variable] * 100
-    return output
+    bst =  xgboost.train(
+        param_,
+        dtrain,
+        num_boost_round=num_rounds,
+        early_stopping_rounds=300,
+        evals=eval_list,
+        verbose_eval=False,
+        evals_result=evals_result
+    )
+
+    return bst, bst.predict(dtest), evals_result
 
 
-def create_stratified_cv_splits(data: pd.DataFrame, target_variable: str, k: int = 3, num_groups=1000,
-                                seed: int = RANDOM_STATE) -> list:
-    grp = pd.qcut(data[target_variable], num_groups, labels=False, duplicates='drop')
+
+def create_stratified_cv_splits(data: pd.DataFrame, target_variable: str, k: int = 3,
+                                num_groups=1000, seed: int = 42) -> list:
+    if num_groups:
+        grp = pd.qcut(data[target_variable], min(len(data), num_groups), labels=False, duplicates='drop')
+    else:
+        grp = data[target_variable]
 
     skf = StratifiedKFold(n_splits=k, shuffle=True, random_state=seed)
-
-    fold_nums = np.zeros(len(data))
-
-    for fold_no, (train_index, test_index) in enumerate(skf.split(X=data, y=grp)):
-        fold_nums[test_index] = fold_no
-
-    cv_splits = [(np.where(fold_nums != i)[0], np.where(fold_nums == i)[0]) for i in range(k)]
-
+    cv_splits = [(train_idx, test_idx) for train_idx, test_idx in skf.split(X=data.index, y=grp)]
     return cv_splits
 
 
-def kFoldCrossValidation(k: int,
-                         data: pd.DataFrame,
-                         features: list,
-                         target_variable: str,
-                         is_classification: bool,
-                         param: Optional[dict],
-                         debug: bool) -> tuple:
-    maes = []
-    mses = []
-    mapes = []
-    log_losses = []
-    f1_scores = []
+def _print_fold_metrics(fold_num: int, metrics: dict, is_classification: bool, mean_price: float,
+                        target_variable: str) -> None:
+    print(f"\nSummary for fold {fold_num}")
+    if is_classification:
+        print(f"Log Loss: {metrics['log_loss']:.3f}")
+        print(f"F1 score: {metrics['f1_score']:.3f}")
+    else:
+        print(f"MAE: {metrics['mae']:.3f} ({metrics['mae'] / mean_price * 100:.3f}% of mean {target_variable})")
+        print(f"RMSE: {metrics['rmse']:.3f}")
+        print(f"MAPE: {metrics['mape'] * 100:.3f}%")
+    print("-" * 60)
 
-    out_of_sample_predictions = pd.Series(index=data.index, dtype=float)
+def _print_final_regression_metrics(k, mae, mae_std, mape, mape_std, rmse, rmse_std, target_variable, true_mean):
+    print(f"\nMean MAE over {k} fold CV: {mae:.2f} ± {mae_std / mae * 100:.3f}% "
+          f"({mae / true_mean * 100:.3f}% ± {mae_std / true_mean * 100:.3f}% of mean {target_variable})")
+    print(f"Mean RMSE over {k} fold CV: {rmse:.2f} ± {rmse_std / rmse * 100:.2f}%")
+    print(f"Mean MAPE over {k} fold CV: {mape * 100:.2f}% ± {mape_std / mape * 100:.3f}%")
 
+
+def _calculate_classification_metrics(metrics: dict, k: int, debug: bool) -> Tuple[float, float]:
+    mean_log_loss = np.mean(metrics['log_loss'])
+    std_log_loss = np.std(metrics['log_loss'])
+    mean_f1_score = np.mean(metrics['f1_score'])
+    std_f1_score = np.std(metrics['f1_score'])
+
+    if debug:
+        print(f"\nMean Log Loss over {k} fold CV: {mean_log_loss:.3f} ± {std_log_loss:.3f}")
+        print(f"Mean F1-score over {k} fold CV: {mean_f1_score:.3f} ± {std_f1_score:.3f}")
+
+    return mean_log_loss, mean_f1_score
+
+
+def _calculate_regression_metrics(metrics: dict, k: int, mean_price: float, target_variable: str, debug: bool) -> Tuple[
+    float, float, float]:
+
+    mae = np.mean(metrics['mae'])
+    mae_std = np.std(metrics['mae'])
+    rmse = np.mean(np.sqrt(metrics['mse']))
+    rmse_std = np.std(np.sqrt(metrics['mse']))
+    mape = np.mean(metrics['mape'])
+    mape_std = np.std(metrics['mape'])
+
+    if debug:
+        _print_final_regression_metrics(k, mae, mae_std, mape, mape_std, rmse, rmse_std, target_variable, mean_price)
+
+    return mae, rmse, mape
+
+
+
+def kFoldCrossValidation(
+    k: int,
+    data: pd.DataFrame,
+    features: List[str],
+    target_variable: str,
+    is_classification: bool,
+    param: Optional[dict] = None,
+    debug: bool = False
+) -> Tuple[Dict[str, float], pd.Series]:
+
+    metrics = {
+        'classification': {'log_loss': [], 'f1_score': []},
+        'regression': {'mae': [], 'rmse': [], 'mape': []}
+    }
+
+    predictions = pd.Series(index=data.index, dtype=float)
+    is_log_transformed = target_variable.startswith('log_')
+    true_mean = np.exp(data[target_variable]).mean() if is_log_transformed else data[target_variable].mean()
     kf = create_stratified_cv_splits(data, target_variable, k=k, num_groups=10)
-    fold_num = 0
-    for train_ix, test_ix in kf:
-        fold_num += 1
 
-        train_data, test_data = data.iloc[train_ix], data.iloc[test_ix]
-        model = model_train(train_data, test_data, features, target_variable, is_classification, param)
-        dtest = make_d_matrix(test_data[features], test_data[target_variable], is_classification=is_classification)
-        test_preds = model.predict(dtest)
-        out_of_sample_predictions.iloc[test_ix] = test_preds
+    for fold_num, (train_ix, test_ix) in enumerate(kf, 1):
+        train_data = data.iloc[train_ix]
+        test_data = data.iloc[test_ix]
+
+        model, test_predictions, eval_results = model_train(train_data, test_data, features, target_variable, is_classification, param)
+
+        predictions.iloc[test_ix] = test_predictions
 
         if is_classification:
-
-            log_loss_value = log_loss(test_data[target_variable].values, test_preds)
-            f1_score = f_score(test_data[target_variable], test_preds > 0.5)
-
-            log_losses.append(log_loss_value)
-            f1_scores.append(f1_score)
-
+            fold_metrics = {
+                'log_loss': eval_results['eval']['log_loss'][-1],
+                'f1_score': eval_results['eval']['f1_score'][-1]
+            }
+            for metric, value in fold_metrics.items():
+                metrics['classification'][metric].append(value)
         else:
-            mae = mean_absolute_error(test_data[target_variable].values, test_preds)
-            mse = mean_squared_error(test_data[target_variable].values, test_preds)
-            mape = mean_absolute_percentage_error(test_data[target_variable].values, test_preds)
-            maes.append(mae)
-            mses.append(mse)
-            mapes.append(mape)
+            fold_metrics = {
+                'mae': eval_results['eval']['mae'][-1],
+                'rmse': eval_results['eval']['rmse'][-1],
+                'mape': eval_results['eval']['mape'][-1]
+            }
+            for metric, value in fold_metrics.items():
+                metrics['regression'][metric].append(value)
 
         if debug:
-            if is_classification:
-                print(f"Summary for fold {fold_num}")
-                print("Log Loss is {}.".format(round(log_loss_value, 3)))
-                print("F1 score is {}.".format(round(f1_score, 3)))
-                print("-------------------------------------------------------------")
-
-            else:
-                print(f"Summary for fold {fold_num}")
-                print("Mean absolute error is {}, which is {}% of mean {}.".format(round(mae, 3), round(
-                    mae / data[target_variable].mean() * 100, 3), target_variable))
-                print("Mean square error is {}.".format(round(mse, 3)))
-                print("Mean absolute percentage error is {}%.".format(round(mape * 100, 3)))
-                print("-------------------------------------------------------------")
+            _print_fold_metrics(fold_num, fold_metrics, is_classification, true_mean, target_variable)
 
     if is_classification:
-        mean_log_loss = np.mean(log_losses)
-        std_log_loss = np.std(log_losses)
-
-        mean_f1_score = np.mean(f1_scores)
-        std_f1_score = np.std(f1_scores)
+        mean_log_loss = np.mean(metrics['classification']['log_loss'])
+        mean_f1_score = np.mean(metrics['classification']['f1_score'])
+        std_log_loss = np.std(metrics['classification']['log_loss'])
+        std_f1_score = np.std(metrics['classification']['f1_score'])
 
         if debug:
-            print(
-                f"Mean Log Loss over {k} fold Cross-validation is {round(mean_log_loss, 3)} ± {round(std_log_loss, 3)}.")
-            print(
-                f"Mean F1-score score over {k} fold Cross-validation is {round(mean_f1_score, 3)} ± {round(std_f1_score, 3)}.")
+            print(f"\nMean Log Loss over {k} fold CV: {mean_log_loss:.3f} ± {std_log_loss:.3f}")
+            print(f"Mean F1-score over {k} fold CV: {mean_f1_score:.3f} ± {std_f1_score:.3f}")
 
-        return mean_log_loss, mean_f1_score, out_of_sample_predictions
+        final_metrics = {
+            'log_loss': mean_log_loss,
+            'f1_score': mean_f1_score,
+            'log_loss_std': std_log_loss,
+            'f1_score_std': std_f1_score
+        }
 
     else:
-        mMae, sMae = np.mean(maes), np.std(maes)
-        mRMse, sRMse = np.mean(np.sqrt(mses)), np.std(np.sqrt(mses))
-        mMape, sMape = np.mean(mapes), np.std(mapes)
-        meanPrice = data[target_variable].mean()
-        rmMae, rsMae = round(mMae, 2), round(sMae / mMae * 100, 3)
-        rmRMse, rsRMse = round(mRMse, 2), round(sRMse / mRMse * 100, 2)
-        rmMape, rsMape = round(mMape * 100, 2), round(sMape / mMape, 3)
+        mae = np.mean(metrics['regression']['mae'])
+        mae_std = np.std(metrics['regression']['mae'])
+        rmse =  np.sqrt(np.mean(np.square(metrics['regression']['rmse'])))
+        rmse_std = np.std(metrics['regression']['rmse'])
+        mape = np.mean(metrics['regression']['mape'])
+        mape_std = np.std(metrics['regression']['mape'])
 
         if debug:
-            print(
-                f"Mean MAE over {k} fold Cross-validation is {rmMae} ± {rsMae}%, which is {round(mMae / meanPrice * 100, 3)} ± {round(sMae / meanPrice * 100, 3)}% percent of mean {target_variable}.")
-            print(f"Mean RMSE over {k} fold Cross-validation is {rmRMse} ± {rsRMse}%.")
-            print(f"Mean MAPE over {k} fold Cross-validation is {rmMape} ± {rsMape}%.")
+            _print_final_regression_metrics(k, mae, mae_std, mape, mape_std, rmse, rmse_std, target_variable, true_mean)
 
-        return mMae, mRMse, mMape, out_of_sample_predictions
+        final_metrics = {
+            'mae': mae,
+            'rmse': rmse,
+            'mape': mape,
+            'mae_std': mae_std,
+            'rmse_std': rmse_std,
+            'mape_std': mape_std,
+            'mae_percent': mae / true_mean * 100
+        }
+
+    return final_metrics, predictions
 
 
-def train_model_util(data: pd.DataFrame, features: list, target_variable: str, is_classification: bool):
-    logging.info("Removed columns that are not used and nan values on target variable...")
+def train_model_util(data: pd.DataFrame, features: list, target_variable: str, is_classification: bool,
+                     previous_trials : Trials = None):
 
-
-    trials = Trials()
+    train_data, validation_data = train_test_split(data, test_size = 0.1, random_state = 42)
 
     def objective(space):
         params = space.copy()
-        loss = kFoldCrossValidation(
-            k=3,
-            data=data,
+        metrics, predictions = kFoldCrossValidation(
+            k=4,
+            data=train_data,
             features=features,
             target_variable=target_variable,
             is_classification=is_classification,
             param=params,
             debug=False
         )
-        return {"loss": loss[0 if is_classification else 0], 'status': STATUS_OK}
+        return {"loss": metrics['mae'], 'status': STATUS_OK}
 
     logging.info("Starting hyper-parameter tuning...")
     if is_classification:
@@ -208,26 +248,48 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
     else:
         space = SPACE_REGRESSION
 
+    if previous_trials is not None:
+        trials = previous_trials
+        trials.refresh()
+        evals = len(previous_trials) + 2
+    else:
+        trials = Trials()
+        evals = MAX_EVALS
+
     best_hyperparams = fmin(
         fn=objective,
         space=space,
         algo=tpe.suggest,
-        max_evals=MAX_EVALS,
+        max_evals=evals,
         trials=trials,
         return_argmin=False
     )
 
-    model = model_train(data, data, features, target_variable, is_classification, best_hyperparams)
+    model, predictions, eval_results = model_train(train_data, train_data, features, target_variable, is_classification, best_hyperparams)
+    predictions = predict(model, validation_data[features])
+    validation_data['preds_validation'] = predictions
+    print(validation_data[[target_variable, 'preds_validation']])
+    print(mean_absolute_percentage_error(validation_data[target_variable], predictions))
+    print(mean_absolute_error(validation_data[target_variable], predictions))
     logging.info("Finished hyper-parameter tuning...")
 
-    res = kFoldCrossValidation(k=3, data=data, features=features, target_variable=target_variable,
+    metrics, predictions = kFoldCrossValidation(k=4, data=data, features=features, target_variable=target_variable,
                                is_classification=is_classification, param=best_hyperparams, debug=True)
-    
-    mMae = res[0]
-    meanPrice = data[target_variable].mean()
-    percent_mMae = round(mMae / meanPrice * 100, 3)
+    data['preds_out_of_sample'] = predictions
+    data['preds_in_sample'] = predict(model, data[features])
+    print(data[['contractor_personal_id', target_variable, 'preds_out_of_sample', 'preds_in_sample']])
+    print(mean_absolute_percentage_error(data[target_variable],  data['preds_in_sample']))
+    print(mean_absolute_percentage_error(data[target_variable], predictions))
+    print(mean_absolute_error(data[target_variable], data['preds_in_sample']))
+    print(mean_absolute_error(data[target_variable], predictions))
 
-    return model, best_hyperparams, res[-1], trials, percent_mMae
+    return model, best_hyperparams, predictions, trials, metrics['mae_percent']
+
+def find_best_previous_trials(data_name, target_variable):
+    model_name = get_model_name(data_name, target_variable)
+    if os.path.exists(get_model_trials_path(model_name)):
+        return load_hyperopt_trials(model_name)
+    return None
 
 
 @click.command(name='train_model')
@@ -240,12 +302,15 @@ def train_model(service, data_name, target_variable):
     data, features_info, features_on_top, features_model = load_data(data_name, target_variable)
 
     on_top = load_on_top_file(service)
-    data[f'{target_variable}_orig'] = data[target_variable]
-    data = apply_on_top(data, target_variable, on_top)
-    data[target_variable] = data[f'corrected_{target_variable}']
-    print(abs(data[target_variable] - data[f'{target_variable}_orig']).mean())
+    data = apply_on_top(data, target_variable, target_variable, on_top)
+    data = apply_on_top(data, f'corrected_{target_variable}', target_variable, on_top, reverse=True)
+    data['diff'] = data[f'{target_variable}_orig'] - data[f'corrected_corrected_{target_variable}']
+    print(data[[f'{target_variable}_orig', f'corrected_{target_variable}_orig', f'corrected_corrected_{target_variable}', 'diff']])
 
-    model, hyperparameters, out_of_sample_predictions, trials, percent_mMae = train_model_util(data, features_model, target_variable, False)
+    trials = find_best_previous_trials(data_name, target_variable)
+
+    model, hyperparameters, out_of_sample_predictions, trials, percent_mMae \
+        = train_model_util(data, features_model, target_variable, is_classification=False, previous_trials = trials)
 
     export_model(model, hyperparameters, out_of_sample_predictions, trials, model_name)
 
@@ -253,10 +318,10 @@ def train_model(service, data_name, target_variable):
     report_resources_path = get_report_resource_path(model_name)
     make_report.generate_report_util(model, data, features_info, features_model, target_variable,
                                      out_of_sample_predictions, trials, report_path,
-                                     report_resources_path, use_pdp=True, use_shap=False)
+                                     report_resources_path, use_pdp=False, use_shap=False)
     
     error_overview_path = get_error_overview_path(service)
-    error_overview.update_error_overview(percent_mMae, data_name, target_variable, error_overview_path)
+    error_overview.update_error_overview(round(percent_mMae, 2), data_name, target_variable, error_overview_path)
 
 
 
@@ -295,8 +360,8 @@ def train_market_presence_model(data_name, target_variable):
     data, features_info, features_on_top, features_model = load_data(data_name, target_variable, drop_target_na=False)
 
     data[presence_model_target_variable] = ~data[target_variable].isna()
-    presence_model, presence_model_hyperparameters, presence_model_out_of_sample_predictions, presence_model_trials = (
-        train_model_util(data, features_model, presence_model_target_variable,True))
+    presence_model, presence_model_hyperparameters, presence_model_out_of_sample_predictions, presence_model_trials, percent_mMae = (
+        train_model_util(data, features_model, presence_model_target_variable,True, None))
 
     export_model(presence_model, presence_model_hyperparameters, presence_model_out_of_sample_predictions,
                  presence_model_trials, presence_model_name)
@@ -333,7 +398,7 @@ def train_error_model(data_name, target_variable, use_pretrained_model):
 
     evaluate_baseline_error_model(data, features_model, error_model_target_variable)
 
-    error_model, error_model_hyperparameters, error_model_out_of_sample_predictions, error_model_trials = train_model_util(data, features_model, error_model_target_variable, True)
+    error_model, error_model_hyperparameters, error_model_out_of_sample_predictions, error_model_trials = train_model_util(data, features_model, error_model_target_variable, True, None)
 
     export_model(error_model, error_model_hyperparameters, error_model_out_of_sample_predictions, error_model_trials, error_model_name)
 

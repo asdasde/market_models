@@ -9,6 +9,7 @@ import xgboost
 import pandas as pd
 from typing import Tuple, Dict, List
 
+from sklearn.base import is_outlier_detector
 from xgboost import Booster
 
 from utilities.path_utils import *
@@ -86,7 +87,9 @@ def encode_categorical_columns(values: pd.Series, feature: str) -> pd.Series:
 
 def choose_columns_specific_for_target_variable(data : pd.DataFrame, features : list, target_variable : str) -> tuple:
     cut_cols_to_remove = [col for col in data.columns if target_variable not in col and 'cut' in col]
+    is_outlier_to_remove = [col for col in data.columns if target_variable.strip('log_') not in col and col.startswith('is_outlier_')]
     features = [col for col in features if col not in cut_cols_to_remove]
+    features = [col for col in features if col not in is_outlier_to_remove]
     return data.drop(columns = cut_cols_to_remove), features
 
 
@@ -142,6 +145,7 @@ def load_data(processed_data_name: str, target_variable: str = None,
     features_model = reconstruct_features_model(data_info['features_model'])
     if target_variable is not None:
         data, features_model = choose_columns_specific_for_target_variable(data, features_model, target_variable)
+
         data = data[features_info + features_on_top + features_model + [target_variable]]
         if drop_target_na:
             data = data.dropna(subset=[target_variable])
@@ -159,7 +163,7 @@ def load_model(model_name : str) -> Booster | None:
         model_path = get_model_path(model_name)
         try:
             model = xgboost.Booster(model_file=str(model_path))
-        except Exception:
+        except Exception as e:
             model = None
     return model
 
