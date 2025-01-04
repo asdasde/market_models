@@ -9,14 +9,9 @@ class Config:
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
     API_PORT: int = int(os.getenv("API_PORT", "8081"))
 
-    MODEL_BASE_PATH: str = os.getenv("MODEL_BASE_PATH", "models")
-    DATA_BASE_PATH: str = os.getenv("DATA_BASE_PATH", "data")
 
     DEBUG_MODE: bool = os.getenv("DEBUG_MODE", "False").lower() == "true"
 
-    DEFAULT_MODEL_VERSION: str = os.getenv("DEFAULT_MODEL_VERSION", "mubi_v5")
-    CATEGORICAL_FILLNA_VALUE: str = os.getenv("CATEGORICAL_FILLNA_VALUE", "unknown")
-    NUMERICAL_FILLNA_VALUE: float = float(os.getenv("NUMERICAL_FILLNA_VALUE", "-999"))
 
     MODEL_VERSIONS: List[str] = ['mubi_v5', 'mubi_v6']
     TARGET_VARIABLES: List[str] = [
@@ -34,7 +29,6 @@ class Config:
         'LINK4-(OC),(Assistance=100 km PL,Replacement vehicle)-price'
     ]
 
-    # Security Configuration
     API_KEY: str = os.getenv("API_KEY", "")
     ALLOWED_ORIGINS: List[str] = os.getenv("ALLOWED_ORIGINS", "").split(",")
 

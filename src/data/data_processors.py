@@ -577,14 +577,16 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
     data = pd.concat(processed_datas)
 
     others = load_other('mubi')
-
     geo_data_columns = ['postal_code', 'latitude', 'longitude', 'voivodeship', 'county', 'postal_code_population', 'postal_code_area']
-    data = pd.merge(data, others['poland_postal_codes'][geo_data_columns], left_on = 'contractor_postal_code', right_on='postal_code')
+    data = pd.merge(
+        data,
+        others['poland_postal_codes'][geo_data_columns],
+        how = 'left',
+        left_on = 'contractor_postal_code',
+        right_on='postal_code',
+    )
     data['postal_code_population_density'] = round(data['postal_code_population'] / data['postal_code_area'], 3)
 
-
-    #data['date_crawled'] = pd.to_datetime(data['calculation_time'])
-    #data['vehicle_maker'] = data['vehicle_maker'].apply(lambda x : x + '-' if any([c in x for c in ['[', ']']]) else x)
     data['contractor_birth_year'] = data['contractor_birth_date'].apply(lambda x : int(x.split('_')[0]))
     data['contractor_driver_licence_year'] = data['contractor_driver_licence_date'].apply(lambda x : int(x.split('_')[0]))
     data['vehicle_age'] = CURRENT_YEAR - data['vehicle_make_year']

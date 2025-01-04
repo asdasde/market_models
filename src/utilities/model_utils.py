@@ -76,9 +76,11 @@ def apply_on_top(data: pd.DataFrame,
     }
 
     data_c = data.copy()
+
     data_c['current_target'] = target_variable_orig
-    on_top = on_top[on_top['current_target'] == target_variable_orig]
     data_c[corrected_target] = data_c[target_variable]
+
+    on_top = on_top[on_top['current_target'] == target_variable_orig]
 
     for factor_type in factor_types:
         same_factor_type = on_top[on_top['factor_type'] == factor_type]
@@ -127,9 +129,8 @@ def apply_on_top(data: pd.DataFrame,
 
 def predict(model: xgboost.Booster, data: pd.DataFrame) -> np.ndarray:
     d_matrix = xgboost.DMatrix(data=data, enable_categorical=True)
-    print(pd.DataFrame.sparse.from_spmatrix(d_matrix.get_data(), columns = data.columns))
+    #print(pd.DataFrame.sparse.from_spmatrix(d_matrix.get_data(), columns = data.columns))
     predictions = model.predict(d_matrix, output_margin=True)
-    print(predictions)
     return predictions
 
 def predict_on_top(
