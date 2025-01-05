@@ -575,6 +575,7 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
         processed_datas.append(processed_data)
 
     data = pd.concat(processed_datas)
+    data = data.dropna(subset = ['contractor_birth_date'])
 
     others = load_other('mubi')
     geo_data_columns = ['postal_code', 'latitude', 'longitude', 'voivodeship', 'county', 'postal_code_population', 'postal_code_area']
