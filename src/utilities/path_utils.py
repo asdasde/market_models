@@ -20,6 +20,7 @@ def get_predictions_all_path(data_name: str, train_data_name : str, apply_presen
         return PREDICTIONS_PATH / f'{data_name}_via_{train_data_name}_with_presence_models_all_predictions.parquet'
     else:
         return PREDICTIONS_PATH / f'{data_name}_via_{train_data_name}_all_predictions.parquet'
+
 def get_predictions_path(data_name: str, model_name: str) -> Path:
     return PREDICTIONS_PATH / f'{data_name}__{model_name}.csv'
 
@@ -28,7 +29,6 @@ def get_features_path(data_name: str) -> Path:
 
 def get_model_name(data_name: str, target_variable: str) -> str:
     return f'{data_name}_{target_variable}_model'
-
 
 def get_error_model_name(data_name: str, target_variable: str) -> str:
     return f'{data_name}_{target_variable}_error_model'
@@ -123,11 +123,12 @@ def get_on_top_factor_files(service : str) -> Path:
 def get_encoder_path(feature: str) -> Path:
     return ENCODERS_PATH / f'{feature}_encoder.pkl'
 
-def get_report_path(model_name: str) -> Path:
-    return REPORTS_PATH / model_name
+def get_report_path(service : str, train_data_name : str, target_variable : str) -> Path:
+    model_name = get_model_name(train_data_name, target_variable)
+    return REPORTS_PATH / service / train_data_name / model_name
 
-def get_report_resource_path(model_name: str) -> Path:
-    return REPORTS_PATH / model_name / 'resources'
+def get_report_resource_path(report_path : Path) -> Path:
+    return report_path / 'resources'
 
 def get_error_overview_path(service: str) -> Path:
     return ERROR_OVERVIEW_PATH / f"error_overview_{service}" / "error_overview.xlsx"
@@ -136,7 +137,6 @@ from pathlib import Path
 
 def get_report_data_overview_path(report_resources_path: Path, idx) -> Path:
     return report_resources_path / f"{idx:02d}_data_overview.jpg"
-
 
 def get_report_feature_distribution_path(report_resources_path: Path, feature : str, idx) -> Path:
     return report_resources_path / f"{idx:02d}_distribution_{feature}.jpg"

@@ -314,8 +314,9 @@ def train_model(service, data_name, target_variable):
 
     export_model(model, hyperparameters, out_of_sample_predictions, trials, model_name)
 
-    report_path = get_report_path(model_name)
-    report_resources_path = get_report_resource_path(model_name)
+    report_path = get_report_path(service, data_name, target_variable)
+    report_resources_path = get_report_resource_path(report_path)
+
     make_report.generate_report_util(model, data, features_info, features_model, target_variable,
                                      out_of_sample_predictions, trials, report_path,
                                      report_resources_path, use_pdp=False, use_shap=False)

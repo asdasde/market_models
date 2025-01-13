@@ -107,7 +107,6 @@ def load_names_file(names_file) -> list:
     with open(names_file_path, 'r') as file:
         names = names_file_path.read_text().strip().split('\n')
     return sorted(names)
-    return names
 
 def reconstruct_features_model(features_model_dict: Dict[str, Dict[str, str]]) -> List[str]:
     reconstructed_features = []
@@ -143,9 +142,12 @@ def load_data(processed_data_name: str, target_variable: str = None,
     features_info = data_info['features_info']
     features_on_top = data_info['features_on_top']
     features_model = reconstruct_features_model(data_info['features_model'])
+
+    cut_cols = [col for col in features_model if col.endswith('_cut')]
+    data[cut_cols] = data[cut_cols].astype('category')
+
     if target_variable is not None:
         data, features_model = choose_columns_specific_for_target_variable(data, features_model, target_variable)
-
         data = data[features_info + features_on_top + features_model + [target_variable]]
         if drop_target_na:
             data = data.dropna(subset=[target_variable])

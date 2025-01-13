@@ -85,7 +85,12 @@ def get_target_variables(columns: List[str], suffixes: Union[List[str], str] = '
 
 
 def remove_special_chars_from_columns(data: pd.DataFrame, features_model: List[str], target_variables : List[str]) -> Tuple[pd.DataFrame, List[str], List[str]]:
-    special_chars_mapping = {'[': '(', ']': ')', '<': '{'}
+    special_chars_mapping = {
+        '[': '(',
+        ']': ')',
+        '<': '{',
+        '/' : '&'
+    }
 
     def replace_special_chars(match):
         return special_chars_mapping.get(match.group(0), "?")
@@ -284,12 +289,16 @@ def make_processed_netrisk_casco_like_data(datas : List[pd.DataFrame], data_name
         processed_data = processed_data.dropna(subset = legacy_cast.keys()).astype(legacy_cast)
         processed_datas.append(processed_data)
 
-    target_variables = DEFAULT_TARGET_VARIABLES
-
     data = pd.concat(processed_datas)
     data = data[data['vehicle_type'] == 'passenger_car']
     data = data[data['contractor_gender'] != 'company']
-    data['policy_start_date'] = pd.to_datetime(data['policy_start_date']).dt.strftime('%Y_%m_%d')
+    try:
+        data['policy_start_date'] = pd.to_datetime(data['policy_start_date']).dt.strftime('%Y_%m_%d')
+    except:
+        pass
+
+
+    target_variables = DEFAULT_TARGET_VARIABLES
     data = add_is_recent(data)
 
     data['vehicle_trim'] = data['vehicle_model']
@@ -341,7 +350,10 @@ def make_processed_netrisk_casco_like_data(datas : List[pd.DataFrame], data_name
 
     data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
     data = data.set_index('unique_id')
-    data = data[features_info + features_on_top + features_model + target_variables]
+    if all([x in data.columns for x in target_variables]):
+        data = data[features_info + features_on_top + features_model + target_variables]
+    else:
+        data = data[features_info + features_on_top + features_model]
     return data, features_info, features_on_top, features_model, target_variables
 
 
@@ -590,8 +602,12 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
 
     data['contractor_birth_year'] = data['contractor_birth_date'].apply(lambda x : int(x.split('_')[0]))
     data['contractor_driver_licence_year'] = data['contractor_driver_licence_date'].apply(lambda x : int(x.split('_')[0]))
+
     data['vehicle_age'] = CURRENT_YEAR - data['vehicle_make_year']
-    data['contractor_age'] = (CURRENT_YEAR - data['contractor_birth_year']).astype(int)
+    data['contractor_age'] = (pd.to_datetime(data['policy_start_date'], format = '%Y_%m_%d') -
+                              pd.to_datetime(data['contractor_birth_date'], format = '%Y_%m_%d'))
+    data['contractor_age'] = data['contractor_age'].apply(lambda x : np.floor(x.days / 365.25))
+
     data['licence_at_age'] = (data['contractor_driver_licence_year'] - data['contractor_birth_year']).astype(int)
     data['driver_experience'] = (CURRENT_YEAR - data['contractor_driver_licence_year']).astype(int)
     data['vehicle_weight_to_power_ratio'] = data['vehicle_gross_weight'] / data['vehicle_power']
@@ -599,6 +615,7 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
     target_variables = get_target_variables(data.columns, suffixes=['-price', '-isolated_price'])
     data[MUBI_CATEGORICAL] = data[MUBI_CATEGORICAL].astype('category')
 
+    data = data[~(data['vehicle_model'] == 'Punto')]
 
     features_info = MUBI_FEATURES_INFO
     features_on_top = MUBI_FEATURES_ON_TOP

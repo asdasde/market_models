@@ -1,66 +1,48 @@
-import os
-from typing import List
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field
+from functools import lru_cache
 from dotenv import load_dotenv
+import os
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 
-class Config:
-    API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
-    API_PORT: int = int(os.getenv("API_PORT", "8081"))
+import os
+import json
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
-    DEBUG_MODE: bool = os.getenv("DEBUG_MODE", "False").lower() == "true"
+class ServiceConfig(BaseModel):
+    """Base configuration class for services"""
+    # Server settings
+    api_host: str = Field(default_factory=lambda: os.getenv("API_HOST", "0.0.0.0"))
+    api_port: int = Field(default_factory=lambda: int(os.getenv("API_PORT", "8081")))
+    debug_mode: bool = Field(default_factory=lambda: os.getenv("DEBUG_MODE", "false").lower() == "true")
+    api_key: str = Field(default_factory=lambda: os.getenv("API_KEY", ""))
+    allowed_origins: List[str] = Field(
+        default_factory=lambda: os.getenv("ALLOWED_ORIGINS", "").split(",")
+    )
 
-
-    MODEL_VERSIONS: List[str] = ['mubi_v5', 'mubi_v6']
-    TARGET_VARIABLES: List[str] = [
-        'BEESAFE-(OC)-price',
-        'TUZ-(OC),(NNW),(Assistance=100 km PL)-price',
-        'BENEFIA-(OC),(NNW),(Assistance=150 km EU,After breakdown)-price',
-        'BALCIA-(OC)-price',
-        'WEFOX-(OC),(Assistance=150 km PL)-price',
-        'ERGOHESTIA-(OC)-price',
-        'UNIQA-(OC),(NNW),(Assistance=75 km PL,After breakdown,Replacement vehicle)-price',
-        'TRASTI-(OC)-price',
-        'GENERALI-(OC)-price',
-        'MTU24-(OC)-price',
-        'PROAMA-(OC)-price',
-        'LINK4-(OC),(Assistance=100 km PL,Replacement vehicle)-price'
-    ]
-
-    API_KEY: str = os.getenv("API_KEY", "")
-    ALLOWED_ORIGINS: List[str] = os.getenv("ALLOWED_ORIGINS", "").split(",")
+    service_name: str
+    model_versions: List[str]
+    target_variables: List[str]
+    feature_columns: List[str]
+    model_kernels: Optional[List[tuple]] = None
+    input_processor : str
+    additional_settings: Dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
-    def get_feature_columns(cls) -> List[str]:
-        return [
-            "vehicle_type",
-            "vehicle_maker",
-            "vehicle_model",
-            "vehicle_make_year",
-            "vehicle_engine_size",
-            "vehicle_power",
-            "vehicle_fuel_type",
-            "vehicle_number_of_doors",
-            "vehicle_trim",
-            "vehicle_ownership_start_year",
-            "vehicle_net_weight",
-            "vehicle_gross_weight",
-            "vehicle_current_mileage",
-            "vehicle_planned_annual_mileage",
-            "vehicle_is_financed",
-            "vehicle_is_leased",
-            "vehicle_usage",
-            "vehicle_imported",
-            "vehicle_steering_wheel_right",
-            "vehicle_parking_place",
-            "contractor_personal_id",
-            "contractor_birth_date",
-            "contractor_marital_status",
-            "contractor_postal_code",
-            "contractor_driver_licence_date",
-            "contractor_owner_driver_same",
-        ]
+    def load_from_json(cls, service_type: str, config_dir: str = "api/configurations") -> 'ServiceConfig':
+        config_path = os.path.join(config_dir, f"{service_type}_configuration.json")
 
-config = Config()
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"Configuration file not found: {config_path}")
+
+        with open(config_path, 'r') as f:
+            config_data = json.load(f)
+
+        return cls(**config_data)

@@ -49,9 +49,12 @@ def make_data_overview(data: pd.DataFrame, report_resources_path: Path, idx) -> 
 
 
 def plot_feature_distribution(feature: pd.Series, report_resources_path: Path, idx: int) -> None:
+    print(feature.name, feature.dtype)
     if feature.dtype == 'object':
         try:
-            feature = pd.to_numeric(feature, errors='coerce')
+            feature = pd.to_numeric(feature, errors='raise')
+            print(f'conversion to numeric succesfuly {feature.name}')
+            print(feature)
         except ValueError:
             pass
 
@@ -650,15 +653,17 @@ def generate_report_util(
     logging.info("Report generation completed.")
 
 @click.command("generate_report")
+@click.option("--service", required=True, type=click.STRING)
 @click.option("--data_name", required=True, type=click.STRING)
 @click.option("--target_variable", required=True, type=click.STRING)
 @click.option('--use_pdp', default=False, is_flag=True, help='Useful when testing, since pdp plots take a long time...')
 @click.option('--use_shap', default=False, is_flag=True, help='Useful when testing, since shap plots take a long time...')
-def generate_report(data_name: str, target_variable: str, use_pdp: bool, use_shap : bool):
+def generate_report(service : str, data_name: str, target_variable: str, use_pdp: bool, use_shap : bool):
 
     model_name = get_model_name(data_name, target_variable)
-    report_path = Path(get_report_path(model_name))
-    report_resources_path = Path(get_report_resource_path(model_name))
+
+    report_path = get_report_path(service, data_name, target_variable)
+    report_resources_path = get_report_resource_path(report_path)
 
     data, features_info, features_on_top, features_model = load_data(data_name, target_variable)
 
