@@ -1,0 +1,60 @@
+image: alpine
+
+variables:
+  GIT_CLONE_PATH: $CI_BUILDS_DIR/$CI_CONCURRENT_ID/$CI_PROJECT_PATH
+  DOCKER_VERSION: 20.10.11
+  DOCKER_DRIVER: overlay2
+  DOCKER_BUILDKIT: 1
+
+cache:
+  key: "$CI_JOB_NAME-$CI_COMMIT_REF_SLUG"
+
+.prepare_deploy: &prepare_deploy
+  - apk add --no-cache rsync openssh
+  - mkdir -p ~/.ssh
+  - echo "$SSH_PRIVATE_KEY" >> ~/.ssh/id_rsa # ovu promenljivu treba dodati na gitlab config. Trebalo bi da vec postoji, samo je enablovati
+  - chmod 600 ~/.ssh/id_rsa
+  - echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
+  - chmod 600 /root/.ssh/config
+
+.docker-registry-auth-gitlab: &docker-registry-auth-gitlab
+  - docker info
+  - docker login -u "gitlab-ci-token" -p "$CI_JOB_TOKEN" $CI_REGISTRY
+
+stages:
+  - build
+  - deploy
+
+build:docker-image:
+  interruptible: true
+  stage: build
+  image:
+    name: docker:${DOCKER_VERSION}
+  tags:
+    - docker-dind
+  before_script:
+    - *docker-registry-auth-gitlab
+  script:
+    - docker build --tag $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG .
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG
+  only:
+    - master
+    - staging
+    - demo
+    - test
+    - /^fixes/.*$/
+    - /^release/.*$/
+
+deploy:all:
+  stage: deploy
+  variables:
+    ENVIRONMENT: staging
+  before_script:
+    - *prepare_deploy
+  script:
+    - ssh -p17000 xcentric@s1.ominimo.dev "cd ~/workspace/hu-ml-pricing-kernel && docker-compose pull && docker-compose up -d && exit"
+    - ssh -p17000 xcentric@s1.ominimo.dev "cd ~/workspace/pl-ml-pricing-kernel && docker-compose pull && docker-compose up -d && exit"
+  only:
+    - master
+    - staging
+
