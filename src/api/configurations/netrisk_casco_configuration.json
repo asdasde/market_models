@@ -1,4 +1,5 @@
 {   
+  "config_name" : "netrisk_casco",
   "service_name": "netrisk_casco",
   "model_versions": ["netrisk_casco_v11"],
   "target_variables": [

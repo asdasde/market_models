@@ -1,10 +1,7 @@
 import os
 import sys
-from copyreg import pickle
 
 import click
-import time
-from pathlib import Path
 from typing import Optional, List, Union, final
 
 import hyperopt.tpe
@@ -285,43 +282,47 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
 
     return model, best_hyperparams, predictions, trials, metrics['mae_percent']
 
-def find_best_previous_trials(data_name, target_variable):
-    model_name = get_model_name(data_name, target_variable)
-    if os.path.exists(get_model_trials_path(model_name)):
-        return load_hyperopt_trials(model_name)
-    return None
-
 
 @click.command(name='train_model')
 @click.option('--service', required=True, type=click.STRING)
 @click.option('--data_name', required=True, type=click.STRING)
 @click.option('--target_variable', required=True, type=click.STRING)
 def train_model(service, data_name, target_variable):
-    model_name = get_model_name(data_name, target_variable)
 
-    data, features_info, features_on_top, features_model = load_data(data_name, target_variable)
+    path_manager = PathManager(service)
+    load_manager = LoadManager(path_manager)
+    export_manager = ExportManager(path_manager)
 
-    on_top = load_on_top_file(service)
+    model_name = path_manager.get_model_name(data_name, target_variable)
+
+    print(path_manager.get_models_for_train_data_directory(data_name))
+    print(path_manager.get_model_directory(data_name, model_name))
+    print(path_manager.get_model_path(data_name, model_name))
+
+    data, features_info, features_on_top, features_model = load_manager.load_data(data_name, target_variable)
+
+    on_top = load_manager.load_on_top_file()
+
     data = apply_on_top(data, target_variable, target_variable, on_top)
     data = apply_on_top(data, f'corrected_{target_variable}', target_variable, on_top, reverse=True)
     data['diff'] = data[f'{target_variable}_orig'] - data[f'corrected_corrected_{target_variable}']
     print(data[[f'{target_variable}_orig', f'corrected_{target_variable}_orig', f'corrected_corrected_{target_variable}', 'diff']])
 
-    trials = find_best_previous_trials(data_name, target_variable)
+    trials = load_manager.find_best_previous_trials(data_name, target_variable)
 
     model, hyperparameters, out_of_sample_predictions, trials, percent_mMae \
         = train_model_util(data, features_model, target_variable, is_classification=False, previous_trials = trials)
 
-    export_model(model, hyperparameters, out_of_sample_predictions, trials, model_name)
+    export_manager.export_model(model, hyperparameters, out_of_sample_predictions, trials, data_name,  model_name)
 
-    report_path = get_report_path(service, data_name, target_variable)
-    report_resources_path = get_report_resource_path(report_path)
+    report_path = path_manager.get_report_path(data_name, target_variable)
+    report_resources_path = path_manager.get_report_resource_path(report_path)
 
     make_report.generate_report_util(model, data, features_info, features_model, target_variable,
                                      out_of_sample_predictions, trials, report_path,
                                      report_resources_path, use_pdp=False, use_shap=False)
     
-    error_overview_path = get_error_overview_path(service)
+    error_overview_path = path_manager.get_error_overview_path()
     error_overview.update_error_overview(round(percent_mMae, 2), data_name, target_variable, error_overview_path)
 
 
@@ -352,40 +353,53 @@ def evaluate_baseline_error_model(data: pd.DataFrame, features: list, target_var
 
 
 @click.command(name='train_presence_model')
+@click.option('--service', required=True, type=click.STRING)
 @click.option('--data_name', required=True, type=click.STRING)
 @click.option('--target_variable', required=True, type=click.STRING)
-def train_market_presence_model(data_name, target_variable):
-    presence_model_name = get_presence_model_name(data_name, target_variable)
+def train_market_presence_model(service, data_name, target_variable):
+
+    path_manager = PathManager(service)
+    load_manager = LoadManager(path_manager)
+    export_manager = ExportManager(path_manager)
+
+    presence_model_name = path_manager.get_presence_model_name(data_name, target_variable)
     presence_model_target_variable = f'{target_variable}_presence'
 
-    data, features_info, features_on_top, features_model = load_data(data_name, target_variable, drop_target_na=False)
+    data, features_info, features_on_top, features_model = load_manager.load_data(data_name, target_variable, drop_target_na=False)
 
     data[presence_model_target_variable] = ~data[target_variable].isna()
-    presence_model, presence_model_hyperparameters, presence_model_out_of_sample_predictions, presence_model_trials, percent_mMae = (
+
+    presence_model, presence_model_hyperparameters, presence_model_out_of_sample_predictions, presence_model_trials, percent_m_mae = (
         train_model_util(data, features_model, presence_model_target_variable,True, None))
 
-    export_model(presence_model, presence_model_hyperparameters, presence_model_out_of_sample_predictions,
-                 presence_model_trials, presence_model_name)
+    export_manager.export_model(presence_model, presence_model_hyperparameters, presence_model_out_of_sample_predictions,
+                 presence_model_trials, target_variable, presence_model_name)
 
 
 @click.command(name='train_error_model')
+@click.option('--service', required=True, type=click.STRING)
 @click.option('--data_name', required=True, type=click.STRING)
 @click.option('--target_variable', required=True, type=click.STRING)
 @click.option('--use_pretrained_model', required=False, type=click.BOOL, default=True, show_default=True)
-def train_error_model(data_name, target_variable, use_pretrained_model):
+def train_error_model(service, data_name, target_variable, use_pretrained_model):
 
-    model_name = get_model_name(data_name, target_variable)
-    error_model_name = get_error_model_name(data_name, target_variable)
+    path_manager = PathManager(service)
+    load_manager = LoadManager(path_manager)
+    export_manager = ExportManager(path_manager)
+
+    model_name = path_manager.get_model_name(data_name, target_variable)
+    error_model_name = path_manager.get_error_model_name(data_name, target_variable)
+
     error_model_target_variable = f'{model_name}_error'
 
-    data, features_info, features_on_top, features_model = load_data(data_name, target_variable)
+    data, features_info, features_on_top, features_model = load_manager.load_data(data_name, target_variable)
 
-    model_exists = check_model_existence(model_name)
+    model_exists = load_manager.check_model_existence(data_name, target_variable)
 
     if (use_pretrained_model and not model_exists) or not use_pretrained_model:
         train_model(data_name, target_variable)
 
-    predictions = load_out_of_sample_predictions(model_name, target_variable)
+    predictions = load_manager.load_out_of_sample_predictions(data_name, model_name, target_variable)
 
     errors = data[target_variable] - predictions
     errors[np.abs(errors) < 1000] = 0
@@ -399,9 +413,9 @@ def train_error_model(data_name, target_variable, use_pretrained_model):
 
     evaluate_baseline_error_model(data, features_model, error_model_target_variable)
 
-    error_model, error_model_hyperparameters, error_model_out_of_sample_predictions, error_model_trials = train_model_util(data, features_model, error_model_target_variable, True, None)
+    error_model, error_model_hyperparameters, error_model_out_of_sample_predictions, error_model_trials, _ = train_model_util(data, features_model, error_model_target_variable, True, None)
 
-    export_model(error_model, error_model_hyperparameters, error_model_out_of_sample_predictions, error_model_trials, error_model_name)
+    export_manager.export_model(error_model, error_model_hyperparameters, error_model_out_of_sample_predictions, error_model_trials, error_model_name)
 
 
 

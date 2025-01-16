@@ -41,7 +41,7 @@ def make_data_overview(data: pd.DataFrame, report_resources_path: Path, idx) -> 
     table.set_fontsize(10)
     table.auto_set_column_width(col=list(range(len(describeStyle.data.columns))))
 
-    output_path = get_report_data_overview_path(report_resources_path, idx)
+    output_path = PathManager.get_report_data_overview_path(report_resources_path, idx)
     plt.savefig(output_path, bbox_inches='tight', dpi=200)
     plt.close()
 
@@ -108,7 +108,7 @@ def make_error_overview(actual: pd.Series, predicted: pd.Series, report_resource
     table.set_fontsize(10)
     table.auto_set_column_width(col=list(range(len(reportStyle.data.columns))))
 
-    output_path = get_report_error_overview_path(report_resources_path, idx)
+    output_path = PathManager.get_report_error_overview_path(report_resources_path, idx)
     plt.savefig(output_path, bbox_inches='tight', dpi=200)
     plt.close()
 
@@ -120,7 +120,7 @@ def plot_hist_error_percentage(error: np.array, report_resources_path: Path, idx
     plt.xlabel('Error percentage')
     plt.ylabel('Percent of errors')
 
-    output_path = get_report_error_percentage_distribution_path(report_resources_path, idx)
+    output_path = PathManager.get_report_error_percentage_distribution_path(report_resources_path, idx)
     plt.savefig(output_path)
     plt.close()
 
@@ -150,7 +150,7 @@ def make_error_quantiles(real: pd.Series, predicted: pd.Series, report_resources
     table.set_fontsize(10)
     table.auto_set_column_width(col=list(range(len(quantile_df_style.data.columns))))
 
-    output_path = get_report_error_quantiles_path(report_resources_path, idx)
+    output_path = PathManager.get_report_error_quantiles_path(report_resources_path, idx)
     plt.savefig(output_path, bbox_inches='tight', dpi=200)
     plt.close()
 
@@ -234,7 +234,7 @@ def plot_feature_importance_individual(importance_dict: dict, kind: str, report_
 
     # Save the plot
     plt.tight_layout()
-    output_path = get_report_feature_importance_path(report_resources_path, kind, idx)
+    output_path = PathManager.get_report_feature_importance_path(report_resources_path, kind, idx)
     plt.savefig(output_path, dpi=300)
     plt.close()
 
@@ -245,8 +245,8 @@ def plot_feature_importance(model: xgboost.Booster, importances: dict, report_re
         plot_feature_importance_individual(model.get_score(importance_type=kind), kind, export_path, idx)
 
     if importances is not None:
-        plot_pdp_importance(list(importances.keys()), list(importances.values()),
-                            save_path=get_report_feature_importance_path(report_resources_path, 'pdp', idx))
+        save_path = PathManager.get_report_feature_importance_path(report_resources_path, 'pdp', idx)
+        plot_pdp_importance(list(importances.keys()), list(importances.values()), save_path = save_path)
 
 
 def plot_pdps(features: list, pdp_dict: dict, report_resources_path: Path, idx: int):
@@ -265,7 +265,7 @@ def plot_pdps(features: list, pdp_dict: dict, report_resources_path: Path, idx: 
         plt.legend()
 
         plt.tight_layout()
-        output_path = get_report_partial_dependence_plot_path(report_resources_path, feature, idx)
+        output_path = PathManager.get_report_partial_dependence_plot_path(report_resources_path, feature, idx)
         plt.savefig(output_path)
         plt.close()
 
@@ -283,7 +283,7 @@ def plot_real_vs_predicted_quantiles(real: pd.Series, predicted: pd.Series, repo
     plt.plot(x, x, c='r')
     plt.xlabel('Real quantiles for training data')
     plt.ylabel('Predicted quantiles for training data')
-    output_path = get_report_real_vs_predicted_quantiles_path(report_resources_path, idx)
+    output_path = PathManager.get_report_real_vs_predicted_quantiles_path(report_resources_path, idx)
     plt.savefig(output_path, bbox_inches='tight')
     plt.close()
 
@@ -422,7 +422,7 @@ def plot_real_vs_predicted_by_feature(data_p: pd.DataFrame, predictions : pd.Ser
     if fig is None:
         return
 
-    output_path = get_report_real_vs_predicted_by_feature_path(report_resources_path, feature, idx)
+    output_path = PathManager.get_report_real_vs_predicted_by_feature_path(report_resources_path, feature, idx)
     fig.savefig(output_path)
     plt.close(fig)
 
@@ -437,7 +437,7 @@ def plot_real_vs_predicted_by_feature(data_p: pd.DataFrame, predictions : pd.Ser
     ax.set_title(f'Segments with top error for {feature}')
     table = ax.table(cellText=top_errors.values, colLabels=top_errors.columns, cellLoc='center', loc='center')
 
-    output_path = get_report_top_10_biggest_errors_by_feature_path(report_resources_path, feature, idx)
+    output_path = PathManager.get_report_top_10_biggest_errors_by_feature_path(report_resources_path, feature, idx)
     plt.savefig(output_path, dpi = 150)
     plt.close()
 
@@ -458,7 +458,7 @@ def get_k_largest_errors(data: pd.DataFrame, out_of_sample_predictions : pd.Seri
     table.auto_set_font_size(False)
     table.set_fontsize(10)
     table.auto_set_column_width(col=list(range(len(k_largest_errors_style.data.columns))))
-    output_path = get_report_k_largest_errors_path(report_resources_path, k, idx)
+    output_path = PathManager.get_report_k_largest_errors_path(report_resources_path, k, idx)
     plt.savefig(output_path, bbox_inches='tight', dpi=200)
     plt.close()
 
@@ -478,7 +478,7 @@ def plot_learning_curve(trials : Trials, report_resources_path: Path, idx : int)
     plt.legend()
     plt.grid(True)
 
-    output_path = get_report_learning_curve_path(report_resources_path, idx)
+    output_path = PathManager.get_report_learning_curve_path(report_resources_path, idx)
     plt.savefig(output_path, bbox_inches='tight')
     plt.close()
 
@@ -660,16 +660,20 @@ def generate_report_util(
 @click.option('--use_shap', default=False, is_flag=True, help='Useful when testing, since shap plots take a long time...')
 def generate_report(service : str, data_name: str, target_variable: str, use_pdp: bool, use_shap : bool):
 
-    model_name = get_model_name(data_name, target_variable)
+    path_manager = PathManager(service)
+    load_manager = LoadManager(path_manager)
 
-    report_path = get_report_path(service, data_name, target_variable)
-    report_resources_path = get_report_resource_path(report_path)
+    model_name = path_manager.get_model_name(data_name, target_variable)
 
-    data, features_info, features_on_top, features_model = load_data(data_name, target_variable)
+    report_path = path_manager.get_report_path(service, data_name, target_variable)
+    report_resources_path = path_manager.get_report_resource_path(report_path)
 
-    model = load_model(model_name)
-    out_of_sample_predictions = load_out_of_sample_predictions(model_name, target_variable)
-    model_trials = load_hyperopt_trials(model_name)
+    data, features_info, features_on_top, features_model = load_manager.load_data(data_name, target_variable)
+
+    model = load_manager.load_model(data_name, model_name)
+    out_of_sample_predictions = load_manager.load_out_of_sample_predictions(data_name, model_name, target_variable)
+    model_trials = load_manager.load_hyperopt_trials(data_name, model_name)
+
     generate_report_util(model, data, features_info, features_model, target_variable, out_of_sample_predictions, model_trials, report_path,
                          report_resources_path, use_pdp, use_shap)
 

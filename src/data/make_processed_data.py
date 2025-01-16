@@ -8,7 +8,7 @@ def handle_names(names : str, names_file_name : str, logger : logging.Logger)->L
         raise ValueError('You must provide either --names or --names_file_name, but not both.')
     if names_file_name:
         logger.info(f'Loading names from file: {names_file_name}')
-        names = load_names_file(names_file_name)
+        names = LoadManager.load_names_file(names_file_name)
     else:
         names = names.split(',')
     return names
@@ -32,6 +32,7 @@ def check_duplicates(data_name_reference : dict, new_entry : dict):
         c4 = new_entry['num_rows'] == entry['num_rows']
         c5 = new_entry['features_model'] == entry['features_model']
         if c1 and c2 and c3 and c4 and c5:
+            print(entry['processed_name'])
             return True
     return False
 
@@ -48,6 +49,12 @@ def check_duplicates(data_name_reference : dict, new_entry : dict):
 @click.option('--short_description', type=click.STRING, default = None)
 def make_processed_data(service: str, names: str, names_file_name: str, data_source: str, benchmark: bool
                         , encoding_type : str, short_description : str) -> None:
+
+
+    path_manager = PathManager(service)
+    load_manager = LoadManager(path_manager)
+    export_manager = ExportManager(path_manager)
+
     logger = logging.getLogger(__name__)
 
     names = handle_names(names, names_file_name, logger)
@@ -56,11 +63,11 @@ def make_processed_data(service: str, names: str, names_file_name: str, data_sou
     names = set(names)
 
     logger.info('Started finding name for new file ...')
-    processed_data_name = find_first_available_name(service, benchmark)
+    processed_data_name = find_first_available_name(path_manager, benchmark)
 
     logger.info(f'Found name {processed_data_name}')
     logger.info("Loading data name reference")
-    data_name_reference = load_data_name_reference()
+    data_name_reference = LoadManager.load_data_name_reference()
 
     logger.info("Loading raw data")
 
@@ -68,7 +75,7 @@ def make_processed_data(service: str, names: str, names_file_name: str, data_sou
     if data_source in ['quotes_data', 'punkta_data', 'netrisk_bought_data', 'mubi']:
         extension = '.parquet'
 
-    paths = [get_raw_data_path(f'{service}{name}', extension=extension) for name in names]
+    paths = [path_manager.get_raw_data_path(f'{service}{name}', extension=extension) for name in names]
     datas = [read_data_frame(path) for path in paths]
 
     processing_function = DATA_SOURCE_HANDLER.get(data_source, None)
@@ -76,8 +83,11 @@ def make_processed_data(service: str, names: str, names_file_name: str, data_sou
         logger.info("Currently unsupported data source, aborting ...")
         return
 
-    data, features_info, features_on_top, features_model, target_variables = (
-        processing_function(datas, data_name_reference, encoding_type))
+    data, features_info, features_on_top, features_model, target_variables = processing_function(datas,
+                                                                                                 data_name_reference,
+                                                                                                 encoding_type,
+                                                                                                 path_manager,
+                                                                                                 load_manager)
 
     features_model = extract_features_with_dtype(data, features_model)
 
@@ -112,7 +122,7 @@ def make_processed_data(service: str, names: str, names_file_name: str, data_sou
 
     logger.info("Exporting processed data and feature file")
 
-    processed_data_path = Path(get_processed_data_path(processed_data_name))
+    processed_data_path = path_manager.get_processed_data_path(processed_data_name)
     data.to_parquet(processed_data_path)
 
     file_size_mb = processed_data_path.stat().st_size / 1_048_576  # Convert bytes to MB
@@ -122,10 +132,10 @@ def make_processed_data(service: str, names: str, names_file_name: str, data_sou
     logger.info("Adding it to the data name reference")
 
     data_name_reference[processed_data_name] = new_entry
-    export_data_name_reference(data_name_reference)
+    ExportManager.export_data_name_reference(data_name_reference)
     logger.info("Data name reference updated successfully.")
     logger.info('Checking if everything went well by trying to load the data ...')
-    data, features_info, features_on_top, features_model = load_data(processed_data_name)
+    data, features_info, features_on_top, features_model = load_manager.load_data(processed_data_name)
     logger.info('All good')
 
 
@@ -134,6 +144,11 @@ def make_processed_data(service: str, names: str, names_file_name: str, data_sou
 @click.option('--names', type=click.STRING, help='List of dates separated by ",".')
 @click.option('--names_file_name', type=click.STRING, help='Relative file path to a file containing names.')
 def merge_processed_datas(service: str, names: str, names_file_name: str):
+
+    path_manager = PathManager(service)
+    load_manager = LoadManager(path_manager)
+    export_manager = ExportManager(path_manager)
+
     logger = logging.getLogger(__name__)
     names = handle_names(names, names_file_name, logger)
 
@@ -141,11 +156,11 @@ def merge_processed_datas(service: str, names: str, names_file_name: str):
     names = set(names)
 
     logger.info('Started finding name for new file ...')
-    processed_data_name = find_first_available_name(service, False)
+    processed_data_name = find_first_available_name(path_manager, False)
 
     logger.info(f'Found name {processed_data_name}')
     logger.info("Loading data name reference")
-    data_name_reference = load_data_name_reference()
+    data_name_reference = LoadManager.load_data_name_reference()
 
     logger.info("Checking in data name reference for duplicate datasets...")
 
@@ -168,7 +183,7 @@ def merge_processed_datas(service: str, names: str, names_file_name: str):
 
     for name in names:
         data_full_name = f'{service}{name}'
-        data, _, _, _ = load_data(data_full_name)
+        data, _, _, _ = load_manager.load_data(data_full_name)
 
         features_model = data_name_reference[data_full_name]['features_model']
         features_on_top = data_name_reference[data_full_name]['features_on_top']
@@ -198,7 +213,7 @@ def merge_processed_datas(service: str, names: str, names_file_name: str):
     data[categorical_columns] = data[categorical_columns].astype('category')
 
     logger.info("Exporting processed data and feature file")
-    processed_data_path = Path(get_processed_data_path(processed_data_name))
+    processed_data_path = path_manager.get_processed_data_path(processed_data_name)
     data.to_parquet(processed_data_path)
 
     target_variables = get_target_variables(data.columns)
@@ -227,43 +242,45 @@ def merge_processed_datas(service: str, names: str, names_file_name: str):
         'target_variables': target_variables
     }
 
-    export_data_name_reference(data_name_reference)
+    ExportManager.export_data_name_reference(data_name_reference)
     logger.info("Data name reference updated successfully.")
     logger.info('Checking if everything went well by trying to load the data ...')
-    data, features_info, features_on_top, features_model = load_data(processed_data_name)
+    data, features_info, features_on_top, features_model = load_manager.load_data(processed_data_name)
     logger.info('All good')
-
-
 
 
 def check_processed_data_name(ctx, param, value):
     if value is not None:
-        path = get_processed_data_path(value)
+        service = ctx.params.get('service')
+        if service is None:
+            return value
+        path_manager = PathManager(service)
+        path = path_manager.get_processed_data_path(value)
         if path.exists():
             return value
         else:
             raise click.BadParameter(f"Processed data file '{path}' does not exist.")
 
 
-
 @click.command(name='remove_processed_data')
+@click.option('--service', type=click.STRING, required=True,
+              is_eager=True)
 @click.option('--processed_data_name', type=click.STRING, required=True, callback=check_processed_data_name)
-def remove_processed_data(processed_data_name: str):
-    processed_data_path = get_processed_data_path(processed_data_name)
+def remove_processed_data(service: str, processed_data_name: str):
+    path_manager = PathManager(service)
+    processed_data_path = path_manager.get_processed_data_path(processed_data_name)
 
     logging.info("Removal process started ...")
     processed_data_path.unlink()
     logging.info("Removed processed data ...")
 
-    data_name_reference = load_data_name_reference()
+    data_name_reference = LoadManager.load_data_name_reference()
     if processed_data_name in data_name_reference:
         del data_name_reference[processed_data_name]
         logging.info(f"File '{processed_data_name}' removed from reference.")
-        export_data_name_reference(data_name_reference)
+        ExportManager.export_data_name_reference(data_name_reference)
     else:
         logging.info(f"File '{processed_data_name}' not found in reference.")
-
-
 @click.group()
 def cli():
     pass

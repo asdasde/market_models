@@ -27,7 +27,8 @@ class ServiceConfig(BaseModel):
         default_factory=lambda: os.getenv("ALLOWED_ORIGINS", "").split(",")
     )
 
-    service_name: str
+    config_name : str
+    service : str
     model_versions: List[str]
     target_variables: List[str]
     feature_columns: List[str]

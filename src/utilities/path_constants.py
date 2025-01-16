@@ -14,11 +14,13 @@ REMOTE_CRAWLER_DIRECTORY = os.getenv('REMOTE_CRAWLER_DIRECTORY')
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # Directory paths (relative to BASE_DIR or directly specified)
+
 DISTRIBUTION_PATH = BASE_DIR / 'data/external/distributions/'
 ON_TOP_PATH = BASE_DIR / 'data/external/on_top/'
 PROCESSED_DATA_PATH = BASE_DIR / 'data/processed/'
 INTERIM_DATA_PATH = BASE_DIR / 'data/interim/'
 RAW_DATA_PATH = BASE_DIR / 'data/raw/'
+EXTERNAL_DATA_PATH = BASE_DIR / 'data/external'
 PREDICTIONS_PATH = BASE_DIR / 'data/predictions/'
 MODELS_PATH = BASE_DIR / 'models/'
 ENCODERS_PATH = BASE_DIR / 'models/encoders/'

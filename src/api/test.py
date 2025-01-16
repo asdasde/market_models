@@ -1,22 +1,20 @@
 import asyncio
 import random
 import httpx
-import pandas as pd
 import os
 import sys
-from datetime import datetime
 from typing import Dict, Tuple, Optional, List
-from dotenv import load_dotenv
-from sqlalchemy.testing.plugin.plugin_base import before_test
+
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from utilities.path_utils import get_raw_data_path
+from utilities.load_utils import *
 
 # Load environment variables
 load_dotenv()
 API_KEY = os.getenv("API_KEY", "your_api_key_here")
 
 # Constants
+#BASE_URL = "https://ml.staging.pl.ominimo.eu"
 BASE_URL = "http://0.0.0.0:8081"
 ENDPOINTS = {
     "competitors": "/predict/competitors",
@@ -72,7 +70,6 @@ class APITester:
 
         for col in df.columns:
             if col != 'real':
-                print(df['real'])
                 df[f'{col}_relative_error'] = (abs(df['real'] - df[col]) / df['real'] * 100)
 
         df['best_error'] = df.filter(like='error').min(axis=1)
@@ -107,7 +104,6 @@ class APITester:
         async with httpx.AsyncClient() as client:
             for endpoint in ENDPOINTS.keys():
                 response_data, status_code = await self.call_endpoint(client, endpoint, test_features)
-                print(response_data)
                 if response_data:
                     if endpoint == "competitors":
                         analysis_df = self.analyze_competitor_results(response_data, test_row)
@@ -127,7 +123,8 @@ class APITester:
 
 
 async def main():
-    test_data = pd.read_parquet(get_raw_data_path('mubi_all_sampled_data', extension='.parquet'))
+    path_manager = PathManager('mubi')
+    test_data = pd.read_parquet(path_manager.get_raw_data_path('mubi_all_sampled_data', extension='.parquet'))
     try:
         test_data['policy_start_date'] = test_data['policy_start_date'].dt.strftime('%Y_%m_%d')
     except:
@@ -141,7 +138,7 @@ async def main():
     }
 
     # Run tests
-    n_iterations = 10
+    n_iterations = 5
     start_time = datetime.now()
 
     for i in range(n_iterations):

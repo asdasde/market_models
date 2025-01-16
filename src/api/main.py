@@ -1,23 +1,17 @@
-import pickle
 from typing import List, Dict, Any, Optional
 
-import numpy as np
-from markdown.extensions.attr_list import get_attrs
 from pydantic import BaseModel, Field, create_model
-import pandas as pd
 import uvicorn
 from fastapi import FastAPI, HTTPException, Depends, Security
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
-import traceback
 import sys
 import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utilities.load_utils import load_model, load_data_name_reference, load_on_top_file, load_data
-from utilities.model_utils import predict, predict_on_top
-from utilities.path_utils import get_model_name
+from utilities.model_utils import *
+from utilities.load_utils import *
 import data.data_processors as data_processors
 
 from config import ServiceConfig
@@ -25,8 +19,8 @@ from config import ServiceConfig
 config = ServiceConfig.load_from_json('mubi_cheapest_offers')
 
 app = FastAPI(
-    title=f"{config.service_name.title()} Prediction API",
-    description=f"API for {config.service_name} predictions",
+    title=f"{config.config_name.title()} Prediction API",
+    description=f"API for {config.config_name} predictions",
     version="1.0.0"
 )
 
@@ -51,6 +45,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+path_manager = None
+load_manager = None
+
 real_datas = {}
 models = {}
 data_name_reference = {}
@@ -59,20 +57,24 @@ on_top = None
 
 def init_models():
     """Initialize model data and load models"""
-    global real_datas, models, on_top, data_name_reference
+    global real_datas, models, on_top, data_name_reference, path_manager, load_manager
+
+    path_manager = PathManager(config.service)
+    load_manager = LoadManager(path_manager)
+
     print("Loading models and data...")
-    real_datas = {x: load_data(x)[0] for x in config.model_versions}
+    real_datas = {x: load_manager.load_data(x)[0] for x in config.model_versions}
 
     models = {
         model_v: {
-            target_var: load_model(get_model_name(model_v, target_var))
+            target_var: load_manager.load_model(model_v, path_manager.get_model_name(model_v, target_var))
             for target_var in config.target_variables
         }
         for model_v in config.model_versions
     }
 
-    on_top = load_on_top_file('mubi')
-    data_name_reference = load_data_name_reference()
+    on_top = load_manager.load_on_top_file()
+    data_name_reference = LoadManager.load_data_name_reference()
     print("Models and data loaded successfully")
 
 def process_input_data(datas: List[InputFeatures]) -> pd.DataFrame:
@@ -80,7 +82,7 @@ def process_input_data(datas: List[InputFeatures]) -> pd.DataFrame:
     features = [data.model_dump() for data in datas]
     df = pd.DataFrame(features)
     processor = getattr(data_processors, config.input_processor)
-    processed_data, _, _, fm, _ = processor([df], data_name_reference, "native")
+    processed_data, _, _, fm, _ = processor([df], data_name_reference, "native", path_manager, load_manager)
     return processed_data
 
 
@@ -96,7 +98,6 @@ def prepare_categorical_data(processed_data: pd.DataFrame, model_v: str) -> pd.D
 
 def predict_competitors(processed_data: pd.DataFrame) -> Dict:
     predictions = {}
-    print(processed_data)
     for model_v in config.model_versions:
         predictions[model_v] = {}
         prepared_data = prepare_categorical_data(processed_data.copy(), model_v)
@@ -108,7 +109,7 @@ def predict_competitors(processed_data: pd.DataFrame) -> Dict:
             if config.debug_mode:
                 print(f"Processing {model_v} - {target_var}")
 
-            print(data_slice)
+
             prediction = float(predict_on_top(model, data_slice, on_top, target_var)[0])
             predictions[model_v][target_var] = prediction
 
