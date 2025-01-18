@@ -101,9 +101,9 @@
              "deductible_percentage",
              "deductible_amount"
         ],
-  "input_processor" : "make_processed_netrisk_casco_like_data",
   "model_kernels": [
         ["GENERALI_price", 0.9],
         ["ALLIANZ_price", 0.85]
-  ]
+  ],
+  "input_processor" : "make_processed_netrisk_casco_like_data"
 }

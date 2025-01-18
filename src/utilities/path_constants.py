@@ -15,6 +15,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # Directory paths (relative to BASE_DIR or directly specified)
 
+API_CONFIGURATIONS_PATH = BASE_DIR / 'src/api/configurations/'
 DISTRIBUTION_PATH = BASE_DIR / 'data/external/distributions/'
 ON_TOP_PATH = BASE_DIR / 'data/external/on_top/'
 PROCESSED_DATA_PATH = BASE_DIR / 'data/processed/'

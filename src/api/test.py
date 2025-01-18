@@ -22,9 +22,9 @@ ENDPOINTS = {
     "optimal_price": "/predict/optimal_price"
 }
 
-from config import ServiceConfig
+from config import ApiConfig
 
-conf = ServiceConfig.load_from_json('mubi_cheapest_offers')
+conf = ApiConfig.load_from_json('mubi_cheapest_offers')
 
 MODEL_V = conf.model_versions[0]
 REQUIRED_COLUMNS = conf.feature_columns

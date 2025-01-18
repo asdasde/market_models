@@ -79,23 +79,38 @@ class PathManager:
         return self.get_model_directory(train_data_name, model_name) / f'{model_name}_hyperopt_trials.pkl'
 
 
+    def get_external_path(self):
+        return EXTERNAL_DATA_PATH / 'services' / self.service
+
     def get_others_path(self) -> Path:
-        return EXTERNAL_DATA_PATH / 'services' / self.service / 'other'
+        return self.get_external_path() / 'other'
 
     def get_mtpl_postal_categories_path(self, target_variable: str) -> Path:
         tables_name = column_to_folder_mapping.get(target_variable)
         comp_name = tables_name.replace('_tables', '')
-        return EXTERNAL_DATA_PATH / 'services' / self.service / 'mtpl_postal_categories' / f'{comp_name}_lookups_table.csv'
+        return self.get_external_path() / 'mtpl_postal_categories' / f'{comp_name}_lookups_table.csv'
 
 
     def get_mtpl_default_values_path(self, target_variable: str) -> Path:
         tables_name = column_to_folder_mapping.get(target_variable)
         comp_name = tables_name.replace('_tables', '')
-        return EXTERNAL_DATA_PATH / 'services' / self.service / 'mtpl_postal_categories' / f'{comp_name}_factor_default_values_table.csv'
+        return self.get_external_path() / 'mtpl_postal_categories' / f'{comp_name}_factor_default_values_table.csv'
 
 
     def get_on_top_factor_file_path(self) -> Path:
-        return EXTERNAL_DATA_PATH / 'services' / self.service / 'on_top' / f'{self.service}_on_top.csv'
+        return self.get_external_path() / 'on_top' / f'{self.service}_on_top.csv'
+
+    @staticmethod
+    def to_s3_key(path : Path) -> str:
+        return str(path).replace(str(BASE_DIR), '').strip('/\\')
+
+    @staticmethod
+    def from_s3_key(s3_key : str) -> Path:
+        return BASE_DIR / s3_key
+
+    @staticmethod
+    def get_api_configuration_path(api_configuration_name : str) -> Path:
+        return API_CONFIGURATIONS_PATH / f'{api_configuration_name}_configuration.json'
 
     @staticmethod
     def get_encoder_path(feature: str) -> Path:
@@ -179,6 +194,7 @@ class PathManager:
     @staticmethod
     def get_brackets_path(feature: str) -> Path:
         return BRACKETS_PATH / f'{feature}_brackets.json'
+
 
 
 ## DEPRECATED

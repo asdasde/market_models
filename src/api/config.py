@@ -4,10 +4,12 @@ from functools import lru_cache
 from dotenv import load_dotenv
 import os
 
+
 # Load environment variables
 load_dotenv()
 
 import os
+import sys
 import json
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
@@ -16,7 +18,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-class ServiceConfig(BaseModel):
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utilities.path_utils import PathManager
+
+
+class ApiConfig(BaseModel):
     """Base configuration class for services"""
     # Server settings
     api_host: str = Field(default_factory=lambda: os.getenv("API_HOST", "0.0.0.0"))
@@ -28,7 +34,7 @@ class ServiceConfig(BaseModel):
     )
 
     config_name : str
-    service : str
+    service_name : str
     model_versions: List[str]
     target_variables: List[str]
     feature_columns: List[str]
@@ -37,8 +43,8 @@ class ServiceConfig(BaseModel):
     additional_settings: Dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
-    def load_from_json(cls, service_type: str, config_dir: str = "api/configurations") -> 'ServiceConfig':
-        config_path = os.path.join(config_dir, f"{service_type}_configuration.json")
+    def load_from_json(cls, api_config_name) -> 'ApiConfig':
+        config_path = PathManager.get_api_configuration_path(api_config_name)
 
         if not os.path.exists(config_path):
             raise FileNotFoundError(f"Configuration file not found: {config_path}")

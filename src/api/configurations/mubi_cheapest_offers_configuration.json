@@ -1,6 +1,6 @@
 {
     "config_name" : "mubi_cheapest_offers",
-    "service" : "mubi",
+    "service_name" : "mubi",
     "model_versions": ["mubi_v15"],
     "target_variables": [
         "BEESAFE-(OC)-price",

@@ -14,9 +14,9 @@ from utilities.model_utils import *
 from utilities.load_utils import *
 import data.data_processors as data_processors
 
-from config import ServiceConfig
+from config import ApiConfig
 
-config = ServiceConfig.load_from_json('mubi_cheapest_offers')
+config = ApiConfig.load_from_json('mubi_cheapest_offers')
 
 app = FastAPI(
     title=f"{config.config_name.title()} Prediction API",
