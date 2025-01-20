@@ -1,7 +1,4 @@
 import warnings
-
-from sqlalchemy.testing.plugin.plugin_base import logging
-
 warnings.simplefilter(action='ignore', category=FutureWarning)
 import os
 import re

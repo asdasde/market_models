@@ -36,7 +36,7 @@ def sample_from_distribution(
     return target_data
 
 
-def make_postal_brackets_mtpl(data: pd.DataFrame, target_variables: list) -> Tuple[pd.DataFrame, List[str]]:
+def make_postal_brackets_mtpl(data: pd.DataFrame, target_variables: list, load_manager : LoadManager) -> Tuple[pd.DataFrame, List[str]]:
     bracket_cols = []
     for target_variable in target_variables:
 
@@ -47,8 +47,8 @@ def make_postal_brackets_mtpl(data: pd.DataFrame, target_variables: list) -> Tup
 
         col_name = f'{target_variable}_postal_code_cut'
 
-        lookups_table = load_lookups_table(target_variable)
-        default_value = load_lookups_default_value(target_variable)
+        lookups_table = load_manager.load_lookups_table(target_variable)
+        default_value = load_manager.load_lookups_default_value(target_variable)
 
         if default_value is None:
             default_value = lookups_table.key.max()
@@ -85,7 +85,12 @@ def get_target_variables(columns: List[str], suffixes: Union[List[str], str] = '
 
 
 def remove_special_chars_from_columns(data: pd.DataFrame, features_model: List[str], target_variables : List[str]) -> Tuple[pd.DataFrame, List[str], List[str]]:
-    special_chars_mapping = {'[': '(', ']': ')', '<': '{'}
+    special_chars_mapping = {
+        '[': '(',
+        ']': ')',
+        '<': '{',
+        '/' : '&'
+    }
 
     def replace_special_chars(match):
         return special_chars_mapping.get(match.group(0), "?")
@@ -126,11 +131,11 @@ def add_is_recent(data : pd.DataFrame) -> pd.DataFrame:
     return data
 
 
-def add_bracket_feature(data: pd.DataFrame, target_variables: list, feature: str) -> Tuple[pd.DataFrame, List[str]]:
+def add_bracket_feature(data: pd.DataFrame, target_variables: list, feature: str, load_manager : LoadManager) -> Tuple[pd.DataFrame, List[str]]:
     if feature == 'postal_code':
-        return make_postal_brackets_mtpl(data, target_variables)
+        return make_postal_brackets_mtpl(data, target_variables, load_manager)
 
-    brackets_path = get_brackets_path(feature)
+    brackets_path = load_manager.path_manager.get_brackets_path(feature)
     if not brackets_path.exists():
         return data, []
 
@@ -153,11 +158,11 @@ def add_bracket_feature(data: pd.DataFrame, target_variables: list, feature: str
     return data, cut_cols
 
 def add_bracket_features(data : pd.DataFrame, features_to_add_brackets : List[str]
-                         , target_variables : List[str]) -> Tuple[pd.DataFrame, List[str]]:
+                         , target_variables : List[str], load_manager : LoadManager) -> Tuple[pd.DataFrame, List[str]]:
 
     bracket_features = []
     for feature in features_to_add_brackets:
-        data, brackets_feature = add_bracket_feature(data, target_variables, feature)
+        data, brackets_feature = add_bracket_feature(data, target_variables, feature, load_manager)
         bracket_features = bracket_features + brackets_feature
     return data, bracket_features
 
@@ -176,7 +181,7 @@ def add_rank1_price(data : pd.DataFrame, target_variables) -> Tuple[pd.DataFrame
     return data, target_variables
 
 
-def make_processed_crawler_data(datas: List[pd.DataFrame], data_name_reference : dict, encoding_type : str) \
+def make_processed_crawler_data(datas: List[pd.DataFrame], data_name_reference : dict, encoding_type : str, path_manager : PathManager, load_manager : LoadManager) \
         -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
 
     processed_datas = []
@@ -208,7 +213,7 @@ def make_processed_crawler_data(datas: List[pd.DataFrame], data_name_reference :
     data['postal_code_3'] = data['postal_code'].apply(lambda x : int(str(x)[:3]))
 
     features_to_add_bracket = ['contractor_age', 'postal_code']
-    data, bracket_features = add_bracket_features(data, features_to_add_bracket, target_variables)
+    data, bracket_features = add_bracket_features(data, features_to_add_bracket, target_variables, load_manager)
 
 
     if 'vehicle_eurotax_code' not in data.columns:
@@ -264,8 +269,9 @@ def make_processed_crawler_data(datas: List[pd.DataFrame], data_name_reference :
     return data, features_info, features_on_top, features_model, target_variables
 
 
-def make_processed_netrisk_casco_like_data(datas : List[pd.DataFrame], data_name_reference : dict, encoding_type : str) \
+def make_processed_netrisk_casco_like_data(datas : List[pd.DataFrame], data_name_reference : dict, encoding_type : str, path_manager : PathManager, load_manager : LoadManager) \
         -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
+
 
     processed_datas = []
     legacy_cols_to_drop = ['vehicle_value']
@@ -284,18 +290,22 @@ def make_processed_netrisk_casco_like_data(datas : List[pd.DataFrame], data_name
         processed_data = processed_data.dropna(subset = legacy_cast.keys()).astype(legacy_cast)
         processed_datas.append(processed_data)
 
-    target_variables = DEFAULT_TARGET_VARIABLES
-
     data = pd.concat(processed_datas)
     data = data[data['vehicle_type'] == 'passenger_car']
     data = data[data['contractor_gender'] != 'company']
-    data['policy_start_date'] = pd.to_datetime(data['policy_start_date']).dt.strftime('%Y_%m_%d')
+    try:
+        data['policy_start_date'] = pd.to_datetime(data['policy_start_date']).dt.strftime('%Y_%m_%d')
+    except:
+        pass
+
+
+    target_variables = DEFAULT_TARGET_VARIABLES
     data = add_is_recent(data)
 
     data['vehicle_trim'] = data['vehicle_model']
     data['vehicle_model'] = data['vehicle_model'].apply(lambda x : x.split('  ')[0] if x is not None else x)
 
-    eurotax_prices = pd.read_csv(get_others_path('netrisk_casco') / 'eurotax_car_db_prices.csv')
+    eurotax_prices = pd.read_csv(path_manager.get_others_path() / 'eurotax_car_db_prices.csv')
     eurotax_prices = eurotax_prices[['eurotax_code', 'new_price_1_gross']]
     eurotax_prices = eurotax_prices.rename(
         columns = {'eurotax_code': 'vehicle_eurotax_code', 'new_price_1_gross': 'vehicle_value'}
@@ -308,7 +318,7 @@ def make_processed_netrisk_casco_like_data(datas : List[pd.DataFrame], data_name
     data['postal_code_2'] = data['postal_code'].apply(lambda x: int(str(x)[:2]))
     data['postal_code_3'] = data['postal_code'].apply(lambda x: int(str(x)[:3]))
 
-    hungary_postal_codes = pd.read_csv(get_others_path('netrisk_casco') / 'hungary_postal_codes.csv')
+    hungary_postal_codes = pd.read_csv(path_manager.get_others_path() / 'hungary_postal_codes.csv')
     hungary_postal_codes = (hungary_postal_codes[['postal_code', 'latitude', 'longitude']]
                                      .drop_duplicates(subset=['postal_code']))
 
@@ -328,7 +338,7 @@ def make_processed_netrisk_casco_like_data(datas : List[pd.DataFrame], data_name
 
 
     features_to_add_bracket = ['contractor_age', 'postal_code']
-    data, bracket_features = add_bracket_features(data, features_to_add_bracket, target_variables)
+    data, bracket_features = add_bracket_features(data, features_to_add_bracket, target_variables, load_manager)
 
     categorical_columns = NETRISK_CASCO_CATEGORICAL_COLUMNS + bracket_features
     data[categorical_columns] = data[categorical_columns].astype('category')
@@ -337,18 +347,23 @@ def make_processed_netrisk_casco_like_data(datas : List[pd.DataFrame], data_name
     features_on_top = NETRISK_CASCO_FEATURES_ON_TOP
 
     latest_model_training_data = 'netrisk_casco_v11'
-    features_model = reconstruct_features_model(data_name_reference[latest_model_training_data]['features_model'])
+    features_model = LoadManager.reconstruct_features_model(data_name_reference[latest_model_training_data]['features_model'])
 
     data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
     data = data.set_index('unique_id')
-    data = data[features_info + features_on_top + features_model + target_variables]
+    if all([x in data.columns for x in target_variables]):
+        data = data[features_info + features_on_top + features_model + target_variables]
+    else:
+        data = data[features_info + features_on_top + features_model]
     return data, features_info, features_on_top, features_model, target_variables
 
 
 def make_processed_netrisk_like_data(
         datas: List[pd.DataFrame],
         data_name_reference: dict,
-        encoding_type: str
+        encoding_type: str,
+        path_manager : PathManager,
+        load_manager : LoadManager
 ) -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
 
     processed_datas = []
@@ -393,7 +408,7 @@ def make_processed_netrisk_like_data(
     data['postal_code_2'] = data['postal_code'].apply(lambda x: int(str(x)[:2]))
     data['postal_code_3'] = data['postal_code'].apply(lambda x: int(str(x)[:3]))
 
-    others = load_other('netrisk_casco')
+    others = load_manager.load_other()
     others['hungary_postal_codes'] = (
         others['hungary_postal_codes'][['postal_code', 'latitude', 'longitude']]
         .drop_duplicates(subset=['postal_code'])
@@ -404,7 +419,7 @@ def make_processed_netrisk_like_data(
     data[NETRISK_CASCO_RIDERS] = None
     data[NETRISK_CASCO_EQUIPMENT_COLS] = None
 
-    netrisk_data, _, _, _ = load_data('netrisk_casco_v10')
+    netrisk_data, _, _, _ = load_manager.load_data('netrisk_casco_v10')
 
     sampling_columns = {
         'deductible': ['deductible_amount', 'deductible_percentage'],
@@ -422,7 +437,7 @@ def make_processed_netrisk_like_data(
     data['vehicle_eurotax_code'] = ''
 
     features_to_add_bracket = ['contractor_age', 'postal_code']
-    data, bracket_features = add_bracket_features(data, features_to_add_bracket, target_variables)
+    data, bracket_features = add_bracket_features(data, features_to_add_bracket, target_variables, load_manager)
 
     data[NETRISK_CASCO_CATEGORICAL_COLUMNS + bracket_features] = data[NETRISK_CASCO_CATEGORICAL_COLUMNS + bracket_features].astype('category')
 
@@ -437,7 +452,7 @@ def make_processed_netrisk_like_data(
     features_on_top = NETRISK_CASCO_FEATURES_ON_TOP
 
     latest_model_training_data = 'netrisk_casco_v11'
-    features_model = reconstruct_features_model(data_name_reference[latest_model_training_data]['features_model'])
+    features_model = LoadManager.reconstruct_features_model(data_name_reference[latest_model_training_data]['features_model'])
 
     data, features_model, target_variables = remove_special_chars_from_columns(
         data,
@@ -493,7 +508,7 @@ def filter_punkta(data : pd.DataFrame) -> pd.DataFrame:
     return data
 
 from pprint import pprint
-def make_processed_punkta_data(datas : List[pd.DataFrame], data_name_reference : dict, encoding_type : str) \
+def make_processed_punkta_data(datas : List[pd.DataFrame], data_name_reference : dict, encoding_type : str, path_manager : PathManager, load_manager : LoadManager) \
         -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
 
     processed_datas = []
@@ -511,7 +526,7 @@ def make_processed_punkta_data(datas : List[pd.DataFrame], data_name_reference :
     data = data.set_index('unique_id')
 
 
-    others = load_other('punkta')
+    others = load_manager.load_other()
 
     geo_data_columns = ['postal_code', 'latitude', 'longitude', 'voivodeship', 'county', 'postal_code_population', 'postal_code_area']
     data = pd.merge(data, others['poland_postal_codes'][geo_data_columns], on = 'postal_code')
@@ -562,7 +577,7 @@ def make_processed_punkta_data(datas : List[pd.DataFrame], data_name_reference :
     return data, features_info, features_on_top, features_model, target_variables
 
 
-def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : dict, encoding_type : str):
+def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : dict, encoding_type : str, path_manager : PathManager, load_manager : LoadManager):
     processed_datas = []
     legacy_cols_to_drop = []
     legacy_rename = {}
@@ -575,8 +590,9 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
         processed_datas.append(processed_data)
 
     data = pd.concat(processed_datas)
+    data = data.dropna(subset = ['contractor_birth_date'])
 
-    others = load_other('mubi')
+    others = load_manager.load_other()
     geo_data_columns = ['postal_code', 'latitude', 'longitude', 'voivodeship', 'county', 'postal_code_population', 'postal_code_area']
     data = pd.merge(
         data,
@@ -589,8 +605,12 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
 
     data['contractor_birth_year'] = data['contractor_birth_date'].apply(lambda x : int(x.split('_')[0]))
     data['contractor_driver_licence_year'] = data['contractor_driver_licence_date'].apply(lambda x : int(x.split('_')[0]))
+
     data['vehicle_age'] = CURRENT_YEAR - data['vehicle_make_year']
-    data['contractor_age'] = (CURRENT_YEAR - data['contractor_birth_year']).astype(int)
+    data['contractor_age'] = (pd.to_datetime(data['policy_start_date'], format = '%Y_%m_%d') -
+                              pd.to_datetime(data['contractor_birth_date'], format = '%Y_%m_%d'))
+    data['contractor_age'] = data['contractor_age'].apply(lambda x : np.floor(x.days / 365.25))
+
     data['licence_at_age'] = (data['contractor_driver_licence_year'] - data['contractor_birth_year']).astype(int)
     data['driver_experience'] = (CURRENT_YEAR - data['contractor_driver_licence_year']).astype(int)
     data['vehicle_weight_to_power_ratio'] = data['vehicle_gross_weight'] / data['vehicle_power']
@@ -598,6 +618,7 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
     target_variables = get_target_variables(data.columns, suffixes=['-price', '-isolated_price'])
     data[MUBI_CATEGORICAL] = data[MUBI_CATEGORICAL].astype('category')
 
+    data = data[~(data['vehicle_model'] == 'Punto')]
 
     features_info = MUBI_FEATURES_INFO
     features_on_top = MUBI_FEATURES_ON_TOP
@@ -623,7 +644,9 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
 def make_processed_generator_data(
         datas: List[pd.DataFrame],
         data_name_reference: dict,
-        encoding_type: str
+        encoding_type: str,
+        path_manager : PathManager,
+        load_manger : LoadManager
 ) -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
 
     processed_datas = []
@@ -657,7 +680,7 @@ def make_processed_generator_data(
     data['postal_code_2'] = data['postal_code'].apply(lambda x: int(str(x)[:2]))
     data['postal_code_3'] = data['postal_code'].apply(lambda x: int(str(x)[:3]))
 
-    others = load_other('netrisk_casco')
+    others = load_manger.load_other()
     others['hungary_postal_codes'] = (
         others['hungary_postal_codes'][['postal_code', 'latitude', 'longitude']]
         .drop_duplicates(subset=['postal_code'])
@@ -666,7 +689,7 @@ def make_processed_generator_data(
     pprint(data)
     data = add_is_recent(data)
 
-    netrisk_data, _, _, _ = load_data('netrisk_casco_v10')
+    netrisk_data, _, _, _ = load_manger.load_data('netrisk_casco_v10')
 
     # Sample distributions for specific columns
     sampling_columns = {
@@ -684,7 +707,7 @@ def make_processed_generator_data(
     data['vehicle_trim'] = ''
     data['vehicle_eurotax_code'] = ''
 
-    data, bracket_features = add_bracket_features(data, ['contractor_age', 'postal_code'], target_variables)
+    data, bracket_features = add_bracket_features(data, ['contractor_age', 'postal_code'], target_variables, load_manger)
 
     data[NETRISK_CASCO_CATEGORICAL_COLUMNS + bracket_features] = data[NETRISK_CASCO_CATEGORICAL_COLUMNS + bracket_features].astype('category')
 
@@ -693,7 +716,7 @@ def make_processed_generator_data(
     features_on_top = NETRISK_CASCO_FEATURES_ON_TOP
 
     latest_model_training_data = 'netrisk_casco_v11'
-    features_model = reconstruct_features_model(data_name_reference[latest_model_training_data]['features_model'])
+    features_model = LoadManager.reconstruct_features_model(data_name_reference[latest_model_training_data]['features_model'])
 
     # Remove special characters from columns
     data, features_model, target_variables = remove_special_chars_from_columns(
@@ -708,7 +731,7 @@ def make_processed_generator_data(
     return data, features_info, features_on_top, features_model, target_variables
 
 
-def make_processed_signal_iduna_data(datas: List[pd.DataFrame], data_name_reference : dict, encoding_type : str) \
+def make_processed_signal_iduna_data(datas: List[pd.DataFrame], data_name_reference : dict, encoding_type : str, path_manager : PathManager, load_manager : LoadManager) \
         -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
 
     processed_datas = []
@@ -740,7 +763,7 @@ def make_processed_signal_iduna_data(datas: List[pd.DataFrame], data_name_refere
     data['postal_code_2'] = data['postal_code'].apply(lambda x : int(str(x)[:2]))
     data['postal_code_3'] = data['postal_code'].apply(lambda x : int(str(x)[:3]))
 
-    others = load_other('netrisk_casco')
+    others = load_manager.load_other()
     others['hungary_postal_codes'] = (others['hungary_postal_codes'][['postal_code', 'latitude', 'longitude']]
                                       .drop_duplicates(subset=['postal_code']))
 
@@ -748,7 +771,7 @@ def make_processed_signal_iduna_data(datas: List[pd.DataFrame], data_name_refere
 
     data = add_is_recent(data)
 
-    netrisk_data, _, _, _ = load_data('netrisk_casco_v10')
+    netrisk_data, _, _, _ = load_manager.load_data('netrisk_casco_v10')
 
     sampling_columns = {
         'deductible': ['deductible_amount', 'deductible_percentage'],
@@ -764,7 +787,7 @@ def make_processed_signal_iduna_data(datas: List[pd.DataFrame], data_name_refere
     data['vehicle_trim'] = ''
     data['vehicle_eurotax_code'] = ''
     data[NETRISK_CASCO_CATEGORICAL_COLUMNS] = data[NETRISK_CASCO_CATEGORICAL_COLUMNS].astype('category')
-    data, bracket_features = add_bracket_features(data, ['contractor_age', 'postal_code'], target_variables)
+    data, bracket_features = add_bracket_features(data, ['contractor_age', 'postal_code'], target_variables, load_manager)
 
     categorical_columns = ['bonus_malus_current', 'bonus_malus_casco', 'vehicle_maker', 'vehicle_model', 'vehicle_fuel_type', 'is_recent'] + bracket_features
     data[categorical_columns] = data[categorical_columns].astype('category')
@@ -774,13 +797,13 @@ def make_processed_signal_iduna_data(datas: List[pd.DataFrame], data_name_refere
     features_on_top = NETRISK_CASCO_FEATURES_ON_TOP
 
     latest_model_training_data = 'netrisk_casco_v11'
-    features_model = reconstruct_features_model(data_name_reference[latest_model_training_data]['features_model'])
+    features_model = LoadManager.reconstruct_features_model(data_name_reference[latest_model_training_data]['features_model'])
     data = data.set_index('unique_id')
     data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
     data = data[features_info + features_on_top + features_model]
     return data, features_info, features_on_top, features_model, target_variables
 
-def make_processed_zmarta_data(datas: pd.DataFrame, data_name_reference : dict, encoding_type : str) -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
+def make_processed_zmarta_data(datas: pd.DataFrame, data_name_reference : dict, encoding_type : str, path_manager : PathManager, load_manger : PathManager) -> Tuple[pd.DataFrame, List[str], List[str], List[str], List[str]]:
     processed_datas = []
     legacy_cols_to_drop = []
     legacy_rename = {}
@@ -859,12 +882,12 @@ def make_processed_zmarta_data(datas: pd.DataFrame, data_name_reference : dict, 
     data = data[list(set(data.columns))]
     return data, features_info, features_on_top, features_model, target_variables
 
-def find_first_available_name(service: str, benchmark: bool) -> str:
+def find_first_available_name(path_manager : PathManager, benchmark: bool) -> str:
     v_id = 1
     ext = 'benchmark_' if benchmark else ''
-    while get_processed_data_path(f'{service}{ext}v{v_id}').exists():
+    while path_manager.get_processed_data_path(f'{path_manager.service}{ext}_v{v_id}').exists():
         v_id += 1
-    return f'{service}{ext}v{v_id}'
+    return f'{path_manager.service}{ext}_v{v_id}'
 
 
 def extract_features_with_dtype(data: pd.DataFrame, features: List[str]) -> Dict[str, Dict[str, str]]:

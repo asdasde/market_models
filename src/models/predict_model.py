@@ -4,23 +4,14 @@ import click
 import pandas as pd
 from warnings import simplefilter
 
-from absl.logging import FATAL
-from sqlalchemy.testing.plugin.plugin_base import logging
-from tensorboard.plugins.pr_curve.metadata import TRUE_NEGATIVES_INDEX
-
 simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pathlib import Path
-
-from utilities.load_utils import *
-from utilities.path_utils import *
 from utilities.model_utils import *
 from utilities.constants import DEFAULT_TARGET_VARIABLES
 
 def get_variable_from_model_name(model_name: str) -> str:
     return '_'.join(model_name.split('_')[-3:-1])
-
 
 def predict_all_models(data : pd.DataFrame, train_data_name : str, apply_presence_models : bool = False):
 
