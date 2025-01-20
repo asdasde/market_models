@@ -248,7 +248,7 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
     if previous_trials is not None:
         trials = previous_trials
         trials.refresh()
-        evals = len(previous_trials) + 2
+        evals = len(previous_trials) + 20
     else:
         trials = Trials()
         evals = MAX_EVALS

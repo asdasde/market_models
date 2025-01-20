@@ -118,7 +118,7 @@ class LoadManager:
         return reconstructed_features
 
     @staticmethod
-    def choose_columns_specific_for_target_variable(self, data: pd.DataFrame, features: list, target_variable: str) -> tuple:
+    def choose_columns_specific_for_target_variable(data: pd.DataFrame, features: list, target_variable: str) -> tuple:
         cut_cols_to_remove = [col for col in data.columns if target_variable not in col and 'cut' in col]
         is_outlier_to_remove = [col for col in data.columns if
                                 target_variable.strip('log_') not in col and col.startswith('is_outlier_')]
@@ -150,7 +150,7 @@ class LoadManager:
         data[cut_cols] = data[cut_cols].astype('category')
 
         if target_variable is not None:
-            data, features_model = self.choose_columns_specific_for_target_variable(data, features_model, target_variable)
+            data, features_model = LoadManager.choose_columns_specific_for_target_variable(data, features_model, target_variable)
             data = data[features_info + features_on_top + features_model + [target_variable]]
             if drop_target_na:
                 data = data.dropna(subset=[target_variable])
