@@ -59,7 +59,7 @@ def init_models():
     """Initialize model data and load models"""
     global real_datas, models, on_top, data_name_reference, path_manager, load_manager
 
-    path_manager = PathManager(config.service)
+    path_manager = PathManager(config.service_name)
     load_manager = LoadManager(path_manager)
 
     print("Loading models and data...")

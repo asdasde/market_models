@@ -16,8 +16,8 @@ API_KEY = os.getenv("API_KEY", "your_api_key_here")
 # Constants
 
 
-BASE_URL = "https://ml.staging.pl.ominimo.eu"
-#BASE_URL = "http://0.0.0.0:8081"
+#BASE_URL = "https://ml.staging.pl.ominimo.eu"
+BASE_URL = "http://0.0.0.0:8081"
 ENDPOINTS = {
     "competitors": "/predict/competitors",
     "technical_price": "/predict/technical_price",

@@ -6,8 +6,6 @@ from datetime import datetime
 import sys
 import os
 
-from selenium.webdriver.common.devtools.v85.browser import Bucket
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utilities.load_utils import *
