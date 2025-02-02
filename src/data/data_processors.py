@@ -576,8 +576,40 @@ def make_processed_punkta_data(datas : List[pd.DataFrame], data_name_reference :
     data = data[list(set(data.columns))]
     return data, features_info, features_on_top, features_model, target_variables
 
-
 def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : dict, encoding_type : str, path_manager : PathManager, load_manager : LoadManager):
+
+
+    MUBI_CATEGORICAL = ['vehicle_maker', 'vehicle_fuel_type', 'voivodeship',
+                        'county', 'vehicle_parking_place', 'vehicle_usage', 'vehicle_first_registration_country']
+
+    MUBI_FEATURES_INFO = ['id_case', 'crawling_date', 'policy_start_date', 'vehicle_type', 'contractor_birth_date',
+                          'contractor_driver_licence_date',
+                          'vehicle_make_year', 'contractor_personal_id', 'vehicle_licence_plate', 'vehicle_trim',
+                          'vehicle_eurotax_version', 'vehicle_infoexpert_model',
+                          'vehicle_infoexpert_version']
+    MUBI_FEATURES_ON_TOP = []
+
+    MUBI_VEHICLE_VALUE_FEATURES = ['balcia_vehicle_value', 'beesafe_vehicle_value',
+                                   'benefia_vehicle_value', 'ergohestia_vehicle_value',
+                                   'generali_vehicle_value', 'link4_vehicle_value',
+                                   'mtu24_vehicle_value', 'proama_vehicle_value',
+                                   'trasti_vehicle_value', 'tuz_vehicle_value',
+                                   'uniqa_vehicle_value', 'wefox_vehicle_value',
+                                   'wiener_vehicle_value', 'ycd_vehicle_value']
+
+    MUBI_FEATURES_MODEL = ['vehicle_engine_size', 'vehicle_power', 'vehicle_number_of_seats', 'vehicle_number_of_doors',
+                           'vehicle_net_weight', 'vehicle_gross_weight',
+                           'vehicle_age', 'vehicle_steering_wheel_right', 'vehicle_imported',
+                           'contractor_age', 'licence_at_age', 'driver_experience', 'contractor_mtpl_policy_years',
+                           'contractor_mtpl_number_of_claims', 'additional_driver_under_26', 'additional_driver_under_26_license_obtained_year',
+                           'latitude', 'longitude',
+                           'postal_code_population', 'postal_code_area', 'postal_code_population_density',
+                           'vehicle_weight_to_power_ratio',
+                           ] + MUBI_VEHICLE_VALUE_FEATURES + MUBI_CATEGORICAL
+
+    MUBI_NULLABLE_INT = ['additional_driver_under_26_license_obtained_year']
+    MUBI_NULLABLE_FLOAT = MUBI_VEHICLE_VALUE_FEATURES
+
     processed_datas = []
     legacy_cols_to_drop = []
     legacy_rename = {}
@@ -590,6 +622,93 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
         processed_datas.append(processed_data)
 
     data = pd.concat(processed_datas)
+
+    if 'id_case' not in data.columns:
+        data['id_case'] = range(len(data))
+    if 'crawling_date' not in data.columns:
+        data['crawling_date'] = '2000.01.01'
+
+    data = data.dropna(subset=['contractor_birth_date'])
+    others = load_manager.load_other()
+    geo_data_columns = ['postal_code', 'latitude', 'longitude', 'voivodeship', 'county', 'postal_code_population',
+                        'postal_code_area']
+
+    data = pd.merge(
+        data,
+        others['poland_postal_codes'][geo_data_columns],
+        how='left',
+        left_on='contractor_postal_code',
+        right_on='postal_code',
+    )
+
+    data['postal_code_population_density'] = round(data['postal_code_population'] / data['postal_code_area'], 3)
+
+    data['contractor_birth_year'] = data['contractor_birth_date'].apply(lambda x: int(x.split('.')[0]))
+    data['contractor_driver_licence_year'] = data['contractor_driver_licence_date'].apply(
+        lambda x: int(x.split('.')[0]))
+
+    data['vehicle_age'] = CURRENT_YEAR - data['vehicle_make_year']
+    data['contractor_age'] = (pd.to_datetime(data['policy_start_date'], format='%Y.%m.%d') -
+                              pd.to_datetime(data['contractor_birth_date'], format='%Y.%m.%d'))
+    data['contractor_age'] = data['contractor_age'].apply(lambda x: np.floor(x.days / 365.25))
+
+    data['licence_at_age'] = (pd.to_datetime(data['contractor_driver_licence_date'], format='%Y.%m.%d') -
+                              pd.to_datetime(data['contractor_birth_date'], format='%Y.%m.%d'))
+    data['licence_at_age'] = data['licence_at_age'].apply(lambda x: np.floor(x.days / 365.25))
+
+    data['driver_experience'] = (pd.to_datetime(data['policy_start_date'], format='%Y.%m.%d') -
+                              pd.to_datetime(data['contractor_driver_licence_date'], format='%Y.%m.%d'))
+    data['driver_experience'] = data['driver_experience'].apply(lambda x: np.floor(x.days / 365.25))
+
+    data['pesel_last_digit'] = data['contractor_personal_id'].apply(lambda x: int(str(x)[-1]))
+    data['generali_pesel_ab_test'] = data['pesel_last_digit'].apply(lambda x: 0 if (x == 0) or (x < 8 and x % 2) else 1)
+
+    data['vehicle_weight_to_power_ratio'] = data['vehicle_gross_weight'] / data['vehicle_power']
+
+    data['contractor_mtpl_policy_years'] = CURRENT_YEAR - data['mtpl_first_purchase_year']
+
+
+
+    features_info = MUBI_FEATURES_INFO
+    features_on_top = MUBI_FEATURES_ON_TOP
+    features_model = (
+            MUBI_FEATURES_MODEL +
+            data.filter(like='__dummy').columns.to_list()
+    )
+
+    target_variables = get_target_variables(data.columns, suffixes=['-price', '-isolated_price'])
+    data[MUBI_CATEGORICAL] = data[MUBI_CATEGORICAL].astype('category')
+
+    for vehicle_value_col in MUBI_VEHICLE_VALUE_FEATURES:
+        data[vehicle_value_col] = None
+
+    data[MUBI_NULLABLE_INT] = data[MUBI_NULLABLE_INT].astype('Int64')
+    data[MUBI_NULLABLE_FLOAT] = data[MUBI_NULLABLE_FLOAT].astype('Float64')
+
+
+    for col in [col for col in target_variables if 'GENERALI' in col or 'PROAMA' in col]:
+        data[col] = data[col] - 0.1 * data[col] * data['generali_pesel_ab_test']
+
+    data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
+    data = data[features_info + features_on_top + features_model + target_variables]
+
+    data = data.loc[:,~data.columns.duplicated()].copy()
+    return data, features_info, features_on_top, features_model, target_variables
+
+def make_processed_mubi_data_old(datas : List[pd.DataFrame], data_name_reference : dict, encoding_type : str, path_manager : PathManager, load_manager : LoadManager):
+    processed_datas = []
+    legacy_cols_to_drop = []
+    legacy_rename = {}
+    legacy_cast = {}
+
+    for data in datas:
+        processed_data = data.drop(columns=legacy_cols_to_drop, errors='ignore')
+        processed_data = processed_data.rename(columns=legacy_rename, errors='ignore')
+        processed_data = processed_data.dropna(subset=legacy_cast.keys()).astype(legacy_cast)
+        processed_datas.append(processed_data)
+
+    data = pd.concat(processed_datas)
+    print(data['contractor_birth_date'])
     data = data.dropna(subset = ['contractor_birth_date'])
 
     others = load_manager.load_other()
@@ -613,12 +732,15 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
 
     data['licence_at_age'] = (data['contractor_driver_licence_year'] - data['contractor_birth_year']).astype(int)
     data['driver_experience'] = (CURRENT_YEAR - data['contractor_driver_licence_year']).astype(int)
+
+
     data['vehicle_weight_to_power_ratio'] = data['vehicle_gross_weight'] / data['vehicle_power']
 
     target_variables = get_target_variables(data.columns, suffixes=['-price', '-isolated_price'])
     data[MUBI_CATEGORICAL] = data[MUBI_CATEGORICAL].astype('category')
 
     data = data[~(data['vehicle_model'] == 'Punto')]
+    data = data[~(data['vehicle_model'] == 'Lupo')]
 
     features_info = MUBI_FEATURES_INFO
     features_on_top = MUBI_FEATURES_ON_TOP

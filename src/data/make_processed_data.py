@@ -271,6 +271,7 @@ def remove_processed_data(service: str, processed_data_name: str):
     processed_data_path = path_manager.get_processed_data_path(processed_data_name)
 
     logging.info("Removal process started ...")
+    print(processed_data_path)
     processed_data_path.unlink()
     logging.info("Removed processed data ...")
 

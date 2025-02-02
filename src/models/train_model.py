@@ -8,8 +8,10 @@ import hyperopt.tpe
 import numpy as np
 import pandas as pd
 from dotenv import find_dotenv, load_dotenv
+from joblib.testing import param
 from mlxtend.classifier import OneRClassifier
 from hyperopt import STATUS_OK, SparkTrials, Trials, fmin, tpe, rand
+from pyspark.sql.connect.functions import replace
 from sklearn.model_selection import train_test_split, StratifiedKFold
 
 from sklearn.metrics import (
@@ -37,7 +39,8 @@ def model_train(train_data: pd.DataFrame,
                 features: list,
                 target_variable: str,
                 is_classification: bool,
-                param: dict = None) -> Tuple[xgboost.Booster, np.ndarray, Dict]:
+                param: dict = None,
+                ) -> Tuple[xgboost.Booster, np.ndarray, Dict]:
 
     param_ = None
     if param is None:
@@ -159,6 +162,10 @@ def kFoldCrossValidation(
 
         model, test_predictions, eval_results = model_train(train_data, test_data, features, target_variable, is_classification, param)
 
+        test_data_test = test_data.sample(n = 1).sample(n = 9, replace = True)
+        test_data_test['vehicle_power'] = [50, 51, 52, 100, 101, 102, 150, 151, 152]
+
+
         predictions.iloc[test_ix] = test_predictions
 
         if is_classification:
@@ -221,13 +228,19 @@ def kFoldCrossValidation(
     return final_metrics, predictions
 
 
-def train_model_util(data: pd.DataFrame, features: list, target_variable: str, is_classification: bool,
-                     previous_trials : Trials = None):
+def train_model_util(data: pd.DataFrame,
+                     features: list,
+                     target_variable: str,
+                     is_classification: bool,
+                     previous_trials : Trials = None,
+                     model_config : dict = None):
 
     train_data, validation_data = train_test_split(data, test_size = 0.1, random_state = 42)
 
     def objective(space):
         params = space.copy()
+        if model_config:
+            params['monotone_constraints'] = model_config['monotone_constraints']
         metrics, predictions = kFoldCrossValidation(
             k=4,
             data=train_data,
@@ -261,24 +274,37 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
         trials=trials,
         return_argmin=False
     )
+    if model_config:
+        best_hyperparams['monotone_constraints'] = model_config['monotone_constraints']
 
     model, predictions, eval_results = model_train(train_data, train_data, features, target_variable, is_classification, best_hyperparams)
     predictions = predict(model, validation_data[features])
     validation_data['preds_validation'] = predictions
+    print("\n=== Validation Set Performance ===")
+    print("Comparing actual vs predicted values:")
     print(validation_data[[target_variable, 'preds_validation']])
-    print(mean_absolute_percentage_error(validation_data[target_variable], predictions))
-    print(mean_absolute_error(validation_data[target_variable], predictions))
+    print(
+        f"\nValidation Set MAPE: {mean_absolute_percentage_error(validation_data[target_variable], predictions):.3f}%")
+    print(f"Validation Set MAE: {mean_absolute_error(validation_data[target_variable], predictions):.3f}")
+    print("\nStarting k-Fold Cross Validation...")
     logging.info("Finished hyper-parameter tuning...")
 
     metrics, predictions = kFoldCrossValidation(k=4, data=data, features=features, target_variable=target_variable,
-                               is_classification=is_classification, param=best_hyperparams, debug=True)
+                                                is_classification=is_classification, param=best_hyperparams, debug=True)
+
+    # Generate both in-sample and out-of-sample predictions
     data['preds_out_of_sample'] = predictions
     data['preds_in_sample'] = predict(model, data[features])
+
+    print("\n=== Final Model Performance ===")
+    print("Predictions by Contractor ID:")
     print(data[['contractor_personal_id', target_variable, 'preds_out_of_sample', 'preds_in_sample']])
-    print(mean_absolute_percentage_error(data[target_variable],  data['preds_in_sample']))
-    print(mean_absolute_percentage_error(data[target_variable], predictions))
-    print(mean_absolute_error(data[target_variable], data['preds_in_sample']))
-    print(mean_absolute_error(data[target_variable], predictions))
+
+    print("\nModel Performance Metrics:")
+    print(f"In-Sample MAPE: {mean_absolute_percentage_error(data[target_variable], data['preds_in_sample']):.3f}%")
+    print(f"Out-of-Sample MAPE: {mean_absolute_percentage_error(data[target_variable], predictions):.3f}%")
+    print(f"In-Sample MAE: {mean_absolute_error(data[target_variable], data['preds_in_sample']):.3f}")
+    print(f"Out-of-Sample MAE: {mean_absolute_error(data[target_variable], predictions):.3f}")
 
     return model, best_hyperparams, predictions, trials, metrics['mae_percent']
 
@@ -287,40 +313,52 @@ def train_model_util(data: pd.DataFrame, features: list, target_variable: str, i
 @click.option('--service', required=True, type=click.STRING)
 @click.option('--data_name', required=True, type=click.STRING)
 @click.option('--target_variable', required=True, type=click.STRING)
-def train_model(service, data_name, target_variable):
+@click.option('--model_config_name', required = False, type = click.STRING)
+def train_model(service, data_name, target_variable, model_config_name = None):
 
     path_manager = PathManager(service)
     load_manager = LoadManager(path_manager)
     export_manager = ExportManager(path_manager)
 
-    model_name = path_manager.get_model_name(data_name, target_variable)
-
-    print(path_manager.get_models_for_train_data_directory(data_name))
-    print(path_manager.get_model_directory(data_name, model_name))
-    print(path_manager.get_model_path(data_name, model_name))
+    model_name = path_manager.get_model_name(data_name, target_variable, model_config_name)
 
     data, features_info, features_on_top, features_model = load_manager.load_data(data_name, target_variable)
 
     on_top = load_manager.load_on_top_file()
+
+    model_config = None
+    if model_config_name:
+        model_config = load_manager.load_model_config(data_name, model_config_name)
 
     data = apply_on_top(data, target_variable, target_variable, on_top)
     data = apply_on_top(data, f'corrected_{target_variable}', target_variable, on_top, reverse=True)
     data['diff'] = data[f'{target_variable}_orig'] - data[f'corrected_corrected_{target_variable}']
     print(data[[f'{target_variable}_orig', f'corrected_{target_variable}_orig', f'corrected_corrected_{target_variable}', 'diff']])
 
-    trials = load_manager.find_best_previous_trials(data_name, target_variable)
+    trials = load_manager.find_best_previous_trials(data_name, model_name)
+
+
+    if model_config:
+        for feature_to_exclude in model_config['features_to_exclude']:
+            features_model.remove(feature_to_exclude)
 
     model, hyperparameters, out_of_sample_predictions, trials, percent_mMae \
-        = train_model_util(data, features_model, target_variable, is_classification=False, previous_trials = trials)
+        = train_model_util(data,
+                           features_model,
+                           target_variable,
+                           is_classification=False,
+                           previous_trials = trials,
+                           model_config = model_config
+                           )
 
     export_manager.export_model(model, hyperparameters, out_of_sample_predictions, trials, data_name,  model_name)
 
-    report_path = path_manager.get_report_path(data_name, target_variable)
+    report_path = path_manager.get_report_path(data_name, target_variable, model_config_name)
     report_resources_path = path_manager.get_report_resource_path(report_path)
 
     make_report.generate_report_util(model, data, features_info, features_model, target_variable,
                                      out_of_sample_predictions, trials, report_path,
-                                     report_resources_path, use_pdp=False, use_shap=False)
+                                     report_resources_path, use_pdp=True, use_shap=False)
     
     error_overview_path = path_manager.get_error_overview_path()
     error_overview.update_error_overview(round(percent_mMae, 2), data_name, target_variable, error_overview_path)
