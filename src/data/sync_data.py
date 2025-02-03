@@ -1,7 +1,6 @@
 import click
 import boto3
 from botocore.exceptions import ClientError
-from datetime import datetime
 import sys
 import os
 
@@ -141,10 +140,9 @@ def download_from_s3(service: str, api_configuration_name: str, bucket_name: str
             logger.error(f'Unexpected error downloading {file_type} {s3_key}: {str(e)}')
 
     logger.info("Syncing processed data files...")
-    for processed_data_name in api_config.model_versions:
-        processed_data_path = path_manager.get_processed_data_path(processed_data_name)
-        s3_key = PathManager.to_s3_key(processed_data_path)
-        download_file(processed_data_path, s3_key, "processed data")
+    processed_data_path = path_manager.get_processed_data_path(api_config.train_data_name)
+    s3_key = PathManager.to_s3_key(processed_data_path)
+    download_file(processed_data_path, s3_key, "processed data")
 
     logger.info("Syncing external files...")
     external_path = path_manager.get_external_path()
@@ -156,13 +154,12 @@ def download_from_s3(service: str, api_configuration_name: str, bucket_name: str
 
     logger.info("Syncing model files...")
 
-    for data_version in api_config.model_versions:
-        model_directories_for_train_data_path = path_manager.get_models_for_train_data_directory(data_version)
-        model_directories_for_train_data_key = PathManager.to_s3_key(model_directories_for_train_data_path)
-        for s3_key in s3_objects:
-            if s3_key.startswith(model_directories_for_train_data_key):
-                local_path = PathManager.from_s3_key(s3_key)
-                download_file(local_path, s3_key, "model file")
+    model_directories_for_train_data_path = path_manager.get_models_for_train_data_directory(api_config.train_data_name)
+    model_directories_for_train_data_key = PathManager.to_s3_key(model_directories_for_train_data_path)
+    for s3_key in s3_objects:
+        if s3_key.startswith(model_directories_for_train_data_key):
+            local_path = PathManager.from_s3_key(s3_key)
+            download_file(local_path, s3_key, "model file")
 
     logger.info("Syncing data_name_reference")
     try:
