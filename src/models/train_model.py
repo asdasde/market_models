@@ -4,14 +4,9 @@ import sys
 import click
 from typing import Optional, List, Union, final
 
-import hyperopt.tpe
-import numpy as np
-import pandas as pd
-from dotenv import find_dotenv, load_dotenv
-from joblib.testing import param
 from mlxtend.classifier import OneRClassifier
 from hyperopt import STATUS_OK, SparkTrials, Trials, fmin, tpe, rand
-from pyspark.sql.connect.functions import replace
+
 from sklearn.model_selection import train_test_split, StratifiedKFold
 
 from sklearn.metrics import (

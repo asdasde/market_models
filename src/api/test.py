@@ -14,8 +14,8 @@ load_dotenv()
 API_KEY = os.getenv("API_KEY", "your_api_key_here")
 
 
-#BASE_URL = "https://ml.staging.pl.ominimo.eu"
-BASE_URL = "http://0.0.0.0:8081"
+BASE_URL = "https://ml.staging.pl.ominimo.eu"
+#BASE_URL = "http://0.0.0.0:8081"
 ENDPOINTS = {
     "competitors": "/predict/competitors",
     "technical_price": "/predict/technical_price",
@@ -47,19 +47,19 @@ class APITester:
 
     async def call_endpoint(self, client: httpx.AsyncClient, endpoint: str,
                             test_features: Dict) -> Tuple[Optional[Dict], int]:
-        try:
-            url = f"{BASE_URL}{ENDPOINTS[endpoint]}"
-            response = await client.post(url, json=test_features, headers=self.headers)
+        url = f"{BASE_URL}{ENDPOINTS[endpoint]}"
+        response = await client.post(url, json=test_features, headers=self.headers)
 
-            if response.status_code != 200:
-                print(f"Error calling {endpoint}: Status code {response.status_code}")
-                return None, response.status_code
+        if response.status_code != 200:
+            print(f"Error calling {endpoint}: Status code {response.status_code}")
+            print(response.content)
+            return None, response.status_code
 
-            return response.json(), response.status_code
-
-        except Exception as e:
-            print(f"Error calling {endpoint}: {str(e)}")
-            return None, 500
+        return response.json(), response.status_code
+        #
+        # except Exception as e:
+        #     print(f"Error calling {endpoint}: {str(e)}")
+        #     return None, 500
 
     def analyze_competitor_results(self, response_data: Dict, test_row: pd.Series) -> pd.DataFrame:
         df = pd.DataFrame([response_data])
@@ -131,7 +131,7 @@ async def main():
     }
 
     # Run tests
-    n_iterations = 50
+    n_iterations = 1
     start_time = datetime.now()
 
     for i in range(n_iterations):
