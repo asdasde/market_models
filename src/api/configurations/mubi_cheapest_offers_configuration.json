@@ -7,17 +7,17 @@
         [
             "UNIQA-(OC),(NNW),(Assistance=75 km PL,After breakdown,Replacement vehicle)-price",
             0.85,
-            0.7
+            0.75
         ],
         [
             "MTU24-(OC)-price",
-            0.9,
+            0.85,
             0.2
         ],
         [
             "LINK4-(OC),(Assistance=100 km PL,Replacement vehicle)-price",
             0.9,
-            0.1
+            0.05
         ]
     ],
 
