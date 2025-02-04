@@ -32,8 +32,11 @@ class PathManager:
 # MODEL PATHS
 
     @staticmethod
-    def get_model_name(data_name: str, target_variable: str) -> str:
-        return f'{data_name}_{target_variable}_model'
+    def get_model_name(data_name: str, target_variable: str, model_config = None) -> str:
+        if model_config:
+            return f'{data_name}_{target_variable}_{model_config}_model'
+        else:
+            return f'{data_name}_{target_variable}_model'
 
     @staticmethod
     def get_error_model_name(data_name: str, target_variable: str) -> str:
@@ -47,6 +50,8 @@ class PathManager:
     def get_presence_model_name_from_model_name(model_name : str) -> str:
         return f'{model_name.replace('_model', '')}_presence_model'
 
+    def get_model_config_path(self, train_data_name : str, model_config_name : str):
+        return MODEL_CONFIGS_PATH / self.service / train_data_name  / f'model_config_{model_config_name}.json'
 
     def get_models_for_train_data_directory(self, train_data_name : str) -> Path:
         return MODELS_PATH / self.service / train_data_name
@@ -116,8 +121,8 @@ class PathManager:
     def get_encoder_path(feature: str) -> Path:
         return ENCODERS_PATH / f'{feature}_encoder.pkl'
 
-    def get_report_path(self, train_data_name : str, target_variable : str) -> Path:
-        model_name = self.get_model_name(train_data_name, target_variable)
+    def get_report_path(self, train_data_name : str, target_variable : str, model_config_name = None) -> Path:
+        model_name = self.get_model_name(train_data_name, target_variable, model_config_name)
         return REPORTS_PATH / self.service / train_data_name / model_name
 
     @staticmethod

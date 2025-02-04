@@ -53,8 +53,8 @@ deploy:all:
   before_script:
     - *prepare_deploy
   script:
-    - ssh -p17000 xcentric@s1.ominimo.dev "cd ~/workspace/hu-ml-pricing-kernel && docker compose pull && docker compose up -d && exit"
-    - ssh -p17000 xcentric@s1.ominimo.dev "cd ~/workspace/pl-ml-pricing-kernel && docker compose pull && docker compose up -d && exit"
+    - ssh -p17000 xcentric@s1.ominimo.dev "cd ~/workspace/hu-ml-pricing-kernel && docker compose pull && docker compose up -d && docker compose run --rm ml-pricing-api python data/sync_data.py download_from_s3 --service mubi --api_configuration_name mubi_cheapest_offers --bucket_name ml-pricing-kernel-ir && docker compose logs && exit"
+    - ssh -p17000 xcentric@s1.ominimo.dev "cd ~/workspace/pl-ml-pricing-kernel && docker compose pull && docker compose up -d && docker compose run --rm ml-pricing-api python data/sync_data.py download_from_s3 --service mubi --api_configuration_name mubi_cheapest_offers --bucket_name ml-pricing-kernel-ir && docker compose logs && exit"
   only:
     - master
     - staging

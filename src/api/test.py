@@ -1,4 +1,5 @@
 import asyncio
+import json
 import random
 import httpx
 import os
@@ -9,11 +10,10 @@ from typing import Dict, Tuple, Optional, List
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utilities.load_utils import *
 
-# Load environment variables
 load_dotenv()
 API_KEY = os.getenv("API_KEY", "your_api_key_here")
 
-# Constants
+
 BASE_URL = "https://ml.staging.pl.ominimo.eu"
 #BASE_URL = "http://0.0.0.0:8081"
 ENDPOINTS = {
@@ -26,8 +26,8 @@ from config import ApiConfig
 
 conf = ApiConfig.load_from_json('mubi_cheapest_offers')
 
-MODEL_V = conf.model_versions[0]
-REQUIRED_COLUMNS = conf.feature_columns
+TRAIN_DATA_NAME = conf.train_data_name
+REQUIRED_COLUMNS = [col['name'] for col in conf.feature_columns]
 
 class APITester:
     def __init__(self, test_data: pd.DataFrame):
@@ -39,47 +39,41 @@ class APITester:
         self.results_dir = "test_results"
         os.makedirs(self.results_dir, exist_ok=True)
 
-    def get_test_case(self) -> Tuple[pd.Series, List[Dict]]:
-        """Generate a random test case from the test data."""
+    def get_test_case(self) -> Tuple[pd.Series, Dict]:
         rnd = random.randint(0, len(self.test_data) - 1)
         test_row = self.test_data.iloc[rnd]
-        test_features = [test_row[REQUIRED_COLUMNS].fillna(0).to_dict()]
+        test_features = test_row[REQUIRED_COLUMNS].to_dict()
         return test_row, test_features
 
     async def call_endpoint(self, client: httpx.AsyncClient, endpoint: str,
-                            test_features: List[Dict]) -> Tuple[Optional[Dict], int]:
-        """Make an API call to the specified endpoint."""
-        try:
-            url = f"{BASE_URL}{ENDPOINTS[endpoint]}"
-            response = await client.post(url, json=test_features, headers=self.headers)
+                            test_features: Dict) -> Tuple[Optional[Dict], int]:
+        url = f"{BASE_URL}{ENDPOINTS[endpoint]}"
+        response = await client.post(url, json=test_features, headers=self.headers)
 
-            if response.status_code != 200:
-                print(f"Error calling {endpoint}: Status code {response.status_code}")
-                return None, response.status_code
+        if response.status_code != 200:
+            print(f"Error calling {endpoint}: Status code {response.status_code}")
+            print(response.content)
+            return None, response.status_code
 
-            return response.json(), response.status_code
-
-        except Exception as e:
-            print(f"Error calling {endpoint}: {str(e)}")
-            return None, 500
+        return response.json(), response.status_code
+        #
+        # except Exception as e:
+        #     print(f"Error calling {endpoint}: {str(e)}")
+        #     return None, 500
 
     def analyze_competitor_results(self, response_data: Dict, test_row: pd.Series) -> pd.DataFrame:
-        df = pd.DataFrame(response_data)
-        df['real'] = test_row[response_data[MODEL_V].keys()]
-        df.loc['rank1'] = df.min(axis=0)
+        df = pd.DataFrame([response_data])
+
+
+        df[[f'real_{col}' for col in df.columns]] = test_row[df.columns].values
 
         for col in df.columns:
-            if col != 'real':
-                df[f'{col}_relative_error'] = (abs(df['real'] - df[col]) / df['real'] * 100)
-
-        df['best_error'] = df.filter(like='error').min(axis=1)
-        df['better_model'] = df.filter(like='error').idxmin(axis=1)
+            if not col.startswith('real'):
+                df[f'{col}_relative_error'] = (abs(df[f'real_{col}'] - df[col]) / df[f'real_{col}'] * 100)
 
         return df
 
     def save_results(self, results: Dict[str, List], iteration: int):
-        """Save test results to CSV files."""
-
         for endpoint, data_list in results.items():
             if data_list:
 
@@ -110,13 +104,12 @@ class APITester:
                         results[endpoint] = {
                             "raw_response": response_data,
                             "analysis": analysis_df,
-                            "better_model_counts": analysis_df['better_model'].value_counts().to_dict(),
                             "relative_errors": analysis_df.filter(like='error')
                         }
                     else:
                         results[endpoint] = {
                             "raw_response": response_data,
-                            "test_case": test_features[0]
+                            "test_case": test_features
                         }
 
         return results
@@ -124,7 +117,7 @@ class APITester:
 
 async def main():
     path_manager = PathManager('mubi')
-    test_data = pd.read_parquet(path_manager.get_raw_data_path('mubi_all_sampled_data', extension='.parquet'))
+    test_data = pd.read_parquet(path_manager.get_raw_data_path('mubi_all_data_new', extension='.parquet'))
     try:
         test_data['policy_start_date'] = test_data['policy_start_date'].dt.strftime('%Y_%m_%d')
     except:
@@ -138,7 +131,7 @@ async def main():
     }
 
     # Run tests
-    n_iterations = 5
+    n_iterations = 1
     start_time = datetime.now()
 
     for i in range(n_iterations):

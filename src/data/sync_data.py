@@ -1,12 +1,8 @@
 import click
-import logging
 import boto3
 from botocore.exceptions import ClientError
-from datetime import datetime
 import sys
 import os
-
-from selenium.webdriver.common.devtools.v85.browser import Bucket
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -64,9 +60,9 @@ def upload_to_s3(service: str, api_configuration_name: str, bucket_name: str, dr
             logger.error(f'Unexpected error uploading {file_type} {local_path}: {str(e)}')
 
     logger.info("Syncing processed data files...")
-    for processed_data_name in api_config.model_versions:
-        processed_data_path = path_manager.get_processed_data_path(processed_data_name)
-        upload_file(processed_data_path, "processed data")
+    processed_data_name = api_config.train_data_name
+    processed_data_path = path_manager.get_processed_data_path(processed_data_name)
+    upload_file(processed_data_path, "processed data")
 
     logger.info("Syncing external files...")
     external_path = path_manager.get_external_path()
@@ -79,15 +75,14 @@ def upload_to_s3(service: str, api_configuration_name: str, bucket_name: str, dr
         logger.warning(f"External directory not found: {external_path}")
 
     logger.info("Syncing model files...")
-    for data_version in api_config.model_versions:
-        try:
-            model_names = path_manager.get_all_models_on_train_data(data_version, is_presence_model=False)
-            for model_name in model_names:
-                model_directory = path_manager.get_model_directory(data_version, model_name)
-                for file_path in model_directory.rglob('*'):
-                    upload_file(file_path, "model file")
-        except Exception as e:
-            logger.error(f"Error accessing models for data version {data_version}: {str(e)}")\
+    try:
+        model_names = path_manager.get_all_models_on_train_data(api_config.train_data_name, is_presence_model=False)
+        for model_name in model_names:
+            model_directory = path_manager.get_model_directory(api_config.train_data_name, model_name)
+            for file_path in model_directory.rglob('*'):
+                upload_file(file_path, "model file")
+    except Exception as e:
+        logger.error(f"Error accessing models for data version {api_config.train_data_name}: {str(e)}")\
 
     logger.info("Syncing data_name_reference")
     try:
@@ -103,9 +98,7 @@ def upload_to_s3(service: str, api_configuration_name: str, bucket_name: str, dr
 @click.option('--bucket_name', required=True, type=click.STRING, help='Name of the S3 bucket')
 @click.option('--dry_run', is_flag=True, help='Print what would be downloaded without actually downloading')
 def download_from_s3(service: str, api_configuration_name: str, bucket_name: str, dry_run: bool) -> None:
-    """
-    Downloads files from S3 bucket, checking if files are already synced before downloading.
-    """
+
     path_manager = PathManager(service)
     load_manager = LoadManager(path_manager)
     logger = logging.getLogger(__name__)
@@ -147,10 +140,9 @@ def download_from_s3(service: str, api_configuration_name: str, bucket_name: str
             logger.error(f'Unexpected error downloading {file_type} {s3_key}: {str(e)}')
 
     logger.info("Syncing processed data files...")
-    for processed_data_name in api_config.model_versions:
-        processed_data_path = path_manager.get_processed_data_path(processed_data_name)
-        s3_key = PathManager.to_s3_key(processed_data_path)
-        download_file(processed_data_path, s3_key, "processed data")
+    processed_data_path = path_manager.get_processed_data_path(api_config.train_data_name)
+    s3_key = PathManager.to_s3_key(processed_data_path)
+    download_file(processed_data_path, s3_key, "processed data")
 
     logger.info("Syncing external files...")
     external_path = path_manager.get_external_path()
@@ -162,13 +154,12 @@ def download_from_s3(service: str, api_configuration_name: str, bucket_name: str
 
     logger.info("Syncing model files...")
 
-    for data_version in api_config.model_versions:
-        model_directories_for_train_data_path = path_manager.get_models_for_train_data_directory(data_version)
-        model_directories_for_train_data_key = PathManager.to_s3_key(model_directories_for_train_data_path)
-        for s3_key in s3_objects:
-            if s3_key.startswith(model_directories_for_train_data_key):
-                local_path = PathManager.from_s3_key(s3_key)
-                download_file(local_path, s3_key, "model file")
+    model_directories_for_train_data_path = path_manager.get_models_for_train_data_directory(api_config.train_data_name)
+    model_directories_for_train_data_key = PathManager.to_s3_key(model_directories_for_train_data_path)
+    for s3_key in s3_objects:
+        if s3_key.startswith(model_directories_for_train_data_key):
+            local_path = PathManager.from_s3_key(s3_key)
+            download_file(local_path, s3_key, "model file")
 
     logger.info("Syncing data_name_reference")
     try:

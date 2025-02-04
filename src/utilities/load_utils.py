@@ -157,6 +157,12 @@ class LoadManager:
         return data, features_info, features_on_top, features_model
 
 
+    def load_model_config(self, train_data_name : str, model_config_name : str):
+        model_config_path = self.path_manager.get_model_config_path(train_data_name, model_config_name)
+        with open(model_config_path, 'r') as file:
+            model_config = json.load(file)
+        return model_config
+
     def check_model_existence(self, train_data_name : str, model_name : str):
         model_path = self.path_manager.get_model_path(train_data_name, model_name)
         return os.path.exists(model_path)
@@ -187,8 +193,7 @@ class LoadManager:
             trials = pickle.load(file)
         return trials
 
-    def find_best_previous_trials(self, train_data_name : str, target_variable : str):
-        model_name = self.path_manager.get_model_name(train_data_name, target_variable)
+    def find_best_previous_trials(self, train_data_name : str, model_name : str):
         trials_path = self.path_manager.get_model_trials_path(train_data_name, model_name)
         if os.path.exists(trials_path):
             return self.load_hyperopt_trials(train_data_name, model_name)

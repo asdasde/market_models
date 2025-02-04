@@ -113,9 +113,21 @@ PUNKTA_FEATURES_MODEL = [
                          'postal_code_population', 'postal_code_area', 'postal_code_population_density'  , 'time_delta', 'policy_start_month'] + PUNKTA_CATEGORICAL_COLUMNS
 
 MUBI_CATEGORICAL = ['vehicle_maker', 'vehicle_fuel_type', 'voivodeship', 'county', 'vehicle_parking_place']
-MUBI_FEATURES_INFO = ['policy_start_date', 'crawling_date', 'contractor_birth_date', 'contractor_personal_id', 'contractor_driver_licence_date', 'vehicle_make_year']
+MUBI_FEATURES_INFO = ['id_case', 'policy_start_date', 'crawling_date', 'contractor_birth_date', 'contractor_driver_licence_date',
+                      'vehicle_make_year', 'contractor_personal_id', 'vehicle_licence_plate', 'vehicle_trim', 'vehicle_eurotax_version', 'vehicle_infoexpert_model',
+                      'vehicle_infoexpert_version']
 MUBI_FEATURES_ON_TOP = []
-MUBI_FEATURES_MODEL = ['vehicle_power', 'vehicle_engine_size', 'vehicle_net_weight', 'vehicle_gross_weight', 'vehicle_age',
-                         'contractor_age', 'licence_at_age', 'driver_experience', 'latitude', 'longitude',
+
+MUBI_VEHICLE_VALUE_FEATURES = ['balcia_vehicle_value', 'beesafe_vehicle_value',
+                             'benefia_vehicle_value', 'ergohestia_vehicle_value',
+                             'generali_vehicle_value', 'link4_vehicle_value',
+                             'mtu24_vehicle_value', 'proama_vehicle_value',
+                             'trasti_vehicle_value', 'tuz_vehicle_value',
+                             'uniqa_vehicle_value', 'wefox_vehicle_value',
+                             'wiener_vehicle_value','ycd_vehicle_value']
+
+
+MUBI_FEATURES_MODEL = ['vehicle_power', 'vehicle_engine_size', 'vehicle_net_weight', 'vehicle_gross_weight', 'vehicle_age', 'vehicle_number_of_seats', 'vehicle_number_of_doors', 'vehicle_steering_wheel_right', 'vehicle_imported',
+                         'contractor_age', 'licence_at_age', 'driver_experience', 'contractor_mtpl_number_of_claims', 'latitude', 'longitude',
                          'postal_code_population', 'postal_code_area', 'postal_code_population_density', 'vehicle_weight_to_power_ratio',
-                       'mtu24_vehicle_value', 'link4_vehicle_value'] + MUBI_CATEGORICAL
+                       ] + MUBI_VEHICLE_VALUE_FEATURES + MUBI_CATEGORICAL

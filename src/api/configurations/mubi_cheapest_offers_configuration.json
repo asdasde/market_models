@@ -1,56 +1,667 @@
 {
-    "config_name" : "mubi_cheapest_offers",
-    "service_name" : "mubi",
-    "model_versions": ["mubi_v15"],
-    "target_variables": [
-        "BEESAFE-(OC)-price",
-        "TUZ-(OC),(NNW),(Assistance=100 km PL)-price",
-        "BENEFIA-(OC),(NNW),(Assistance=150 km EU,After breakdown)-price",
-        "BALCIA-(OC)-price",
-        "WEFOX-(OC),(Assistance=150 km PL)-price",
-        "ERGOHESTIA-(OC)-price",
-        "UNIQA-(OC),(NNW),(Assistance=75 km PL,After breakdown,Replacement vehicle)-price",
-        "TRASTI-(OC)-price",
-        "GENERALI-(OC)-price",
-        "MTU24-(OC)-price",
-        "PROAMA-(OC)-price",
-        "LINK4-(OC),(Assistance=100 km PL,Replacement vehicle)-price"
-    ],
-    "feature_columns": [
-        "vehicle_type",
-        "vehicle_maker",
-        "vehicle_model",
-        "vehicle_make_year",
-        "vehicle_engine_size",
-        "vehicle_power",
-        "vehicle_fuel_type",
-        "vehicle_number_of_doors",
-        "vehicle_trim",
-        "vehicle_ownership_start_year",
-        "vehicle_net_weight",
-        "vehicle_gross_weight",
-        "vehicle_current_mileage",
-        "vehicle_planned_annual_mileage",
-        "vehicle_is_financed",
-        "vehicle_is_leased",
-        "vehicle_usage",
-        "vehicle_imported",
-        "vehicle_steering_wheel_right",
-        "vehicle_parking_place",
-        "contractor_personal_id",
-        "contractor_birth_date",
-        "contractor_marital_status",
-        "contractor_postal_code",
-        "contractor_driver_licence_date",
-        "contractor_owner_driver_same",
-        "policy_start_date",
-        "crawling_date",
-        "link4_vehicle_value",
-        "mtu24_vehicle_value"
-    ],
+    "config_name": "mubi_cheapest_offers",
+    "service_name": "mubi",
+    "train_data_name": "mubi_v19",
+    "input_processor": "make_processed_mubi_data",
     "model_kernels": [
-        ["UNIQA-(OC),(NNW),(Assistance=75 km PL,After breakdown,Replacement vehicle)-price", 0.9],
-        ["MTU24-(OC)-price", 0.85]
+        [
+            "UNIQA-(OC),(NNW),(Assistance=75 km PL,After breakdown,Replacement vehicle)-price",
+            0.85,
+            0.75
+        ],
+        [
+            "MTU24-(OC)-price",
+            0.85,
+            0.2
+        ],
+        [
+            "LINK4-(OC),(Assistance=100 km PL,Replacement vehicle)-price",
+            0.9,
+            0.05
+        ]
     ],
-    "input_processor" : "make_processed_mubi_data"
+
+    "target_variables_and_model_config": {
+        "BEESAFE-(OC)-price" : "monotonicity",
+        "TUZ-(OC),(NNW),(Assistance=100 km PL)-price" : "monotonicity",
+        "BENEFIA-(OC),(NNW),(Assistance=150 km EU,After breakdown)-price" : "monotonicity",
+        "BALCIA-(OC)-price" : "monotonicity",
+        "WEFOX-(OC),(Assistance=150 km PL)-price" : "monotonicity",
+        "ERGOHESTIA-(OC)-price" : "monotonicity",
+        "UNIQA-(OC),(NNW),(Assistance=75 km PL,After breakdown,Replacement vehicle)-price" : "monotonicity",
+        "TRASTI-(OC)-price" : "monotonicity",
+        "GENERALI-(OC)-price" : "monotonicity",
+        "MTU24-(OC)-price" : "monotonicity",
+        "PROAMA-(OC)-price" : "monotonicity",
+        "LINK4-(OC),(Assistance=100 km PL,Replacement vehicle)-price" : "monotonicity"
+    },
+    "feature_columns": [
+        {
+            "name": "policy_start_date",
+            "type": "str",
+            "validation": [
+                {
+                    "type": "regex_pattern",
+                    "params": {
+                        "pattern": "^\\d{4}.\\d{2}.\\d{2}$"
+                    },
+                    "error_message": "Policy start date must be in YYYY.MM.DD format"
+                }
+            ]
+        },
+        {
+            "name": "vehicle_type",
+            "type": "str",
+            "validation": [
+                {
+                    "type": "enum",
+                    "params": {
+                        "allowed_values": [
+                            "passenger_car"
+                        ]
+                    },
+                    "error_message": "Invalid vehicle type"
+                }
+            ],
+            "nullable" : true
+        },
+        {
+            "name": "vehicle_licence_plate",
+            "type": "str",
+            "validation": [],
+            "nullable" : true
+        },
+        {
+            "name": "vehicle_maker",
+            "type": "str",
+            "validation" : []
+        },
+        {
+            "name": "vehicle_model",
+            "type": "str",
+            "validation": []
+        },
+        {
+            "name": "vehicle_make_year",
+            "type": "int",
+            "validation": [
+                {
+                    "type": "min_value",
+                    "params": {
+                        "min_val": 1900
+                    }
+                },
+                {
+                    "type": "max_value",
+                    "params": {
+                        "max_val": 2025
+                    }
+                }
+            ]
+        },
+        {
+            "name": "vehicle_engine_size",
+            "type": "int",
+            "validation": [
+                {
+                    "type": "min_value",
+                    "params": {
+                        "min_val": 0
+                    },
+                    "error_message": "Engine size must be at least 0 cc"
+                }
+            ]
+        },
+        {
+            "name": "vehicle_power",
+            "type": "int",
+            "validation": [
+                {
+                    "type": "min_value",
+                    "params": {
+                        "min_val": 0
+                    },
+                    "error_message": "Vehicle power must be at least 20 HP"
+                }
+            ]
+        },
+        {
+            "name": "vehicle_fuel_type",
+            "type": "str",
+            "validation": [
+                {
+                    "type": "enum",
+                    "params": {
+                        "allowed_values": [
+                            "petrol",
+                            "diesel",
+                            "electric",
+                            "hybrid",
+                            "gas",
+                            "other"
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "name": "vehicle_number_of_doors",
+            "type": "int",
+            "validation": [
+                {
+                    "type": "min_value",
+                    "params": {
+                        "min_val": 2
+                    },
+                    "error_message": "Number of doors must be at least 2"
+                },
+                {
+                    "type": "max_value",
+                    "params": {
+                        "max_val": 5
+                    },
+                    "error_message": "Number of doors cannot exceed 5"
+                }
+            ]
+        },
+        {
+            "name": "vehicle_number_of_seats",
+            "type": "int",
+            "validation": [
+                {
+                    "type": "min_value",
+                    "params": {
+                        "min_val": 2
+                    },
+                    "error_message": "Number of seats must be at least 2"
+                },
+                {
+                    "type": "max_value",
+                    "params": {
+                        "max_val": 9
+                    },
+                    "error_message": "Number of seats cannot exceed 9"
+                }
+            ]
+        },
+        {
+            "name": "contractor_postal_code",
+            "type": "str",
+            "validation": [
+                {
+                    "type": "regex_pattern",
+                    "params": {
+                        "pattern": "^\\d{2}-\\d{3}$"
+                    },
+                    "error_message": "Postal code must be in format XX-XXX"
+                }
+            ]
+        },
+        {
+            "name": "vehicle_trim",
+            "type": "str",
+            "validation": [],
+            "nullable" : true
+        },
+        {
+            "name": "vehicle_infoexpert_model",
+            "type": "str",
+            "validation": [],
+            "nullable" : true
+        },
+        {
+            "name": "vehicle_infoexpert_version",
+            "type": "str",
+            "validation": [],
+            "nullable" : true
+        },
+        {
+            "name": "vehicle_eurotax_version",
+            "type": "str",
+            "validation": [],
+            "nullable" : true
+        },
+        {
+            "name": "vehicle_first_registration_date",
+            "type": "str",
+            "validation": [
+                {
+                    "type": "regex_pattern",
+                    "params": {
+                        "pattern": "^\\d{4}.\\d{2}.\\d{2}$"
+                    },
+                    "error_message": "First registration date must be in YYYY.MM.DD format"
+                }
+            ],
+            "nullable" : true
+        },
+        {
+            "name": "vehicle_ownership_start_year",
+            "type": "int",
+            "validation": [
+                {
+                    "type": "min_value",
+                    "params": {
+                        "min_val": 1900
+                    },
+                    "error_message": "Ownership start year must be after 1900"
+                },
+                {
+                    "type": "max_value",
+                    "params": {
+                        "max_val": 2025
+                    },
+                    "error_message": "Ownership start year cannot be after 2025"
+                }
+            ]
+        },
+        {
+            "name": "vehicle_first_registration_country",
+            "type": "str",
+            "validation": [
+                {
+                    "type": "enum",
+                    "params": {
+                        "allowed_values": [
+                            "pol",
+                            "usa_can",
+                            "eur",
+                            "other"
+                        ]
+                    }
+                }
+            ],
+            "nullable" : true
+        },
+        {
+            "name": "vehicle_net_weight",
+            "type": "int",
+            "validation": [
+                {
+                    "type": "min_value",
+                    "params": {
+                        "min_val": 0
+                    },
+                    "error_message": "Net weight must be at least 500 kg"
+                }
+            ]
+        },
+        {
+            "name": "vehicle_gross_weight",
+            "type": "int",
+            "validation": [
+                {
+                    "type": "min_value",
+                    "params": {
+                        "min_val": 0
+                    },
+                    "error_message": "Gross weight must be at least 1000 kg"
+                }
+            ]
+        },
+        {
+            "name": "vehicle_current_mileage",
+            "type": "int",
+            "validation": [
+                {
+                    "type": "min_value",
+                    "params": {
+                        "min_val": 0
+                    },
+                    "error_message": "Current mileage cannot be negative"
+                }
+            ]
+        },
+        {
+            "name": "vehicle_planned_annual_mileage",
+            "type": "int",
+            "validation": [
+                {
+                    "type": "min_value",
+                    "params": {
+                        "min_val": 0
+                    },
+                    "error_message": "Planned annual mileage cannot be negative"
+                }
+            ]
+        },
+        {
+            "name": "vehicle_is_financed",
+            "type": "bool",
+            "validation": []
+        },
+        {
+            "name": "vehicle_is_leased",
+            "type": "bool",
+            "validation": []
+        },
+        {
+            "name": "vehicle_usage",
+            "type": "str",
+            "validation": [
+                {
+                    "type": "enum",
+                    "params": {
+                        "allowed_values": [
+                            "private",
+                            "normal",
+                            "commercial",
+                            "ride_sharing",
+                            "other"
+                        ]
+                    },
+                    "error_message": "Invalid vehicle usage type"
+                }
+            ],
+            "nullable" : true
+        },
+        {
+            "name": "vehicle_imported",
+            "type": "bool",
+            "validation": []
+        },
+        {
+            "name": "vehicle_steering_wheel_right",
+            "type": "bool",
+            "validation": []
+        },
+        {
+            "name": "vehicle_parking_place",
+            "type": "str",
+            "validation": [
+                {
+                    "type": "enum",
+                    "params": {
+                        "allowed_values": [
+                            "individual_garage",
+                            "street",
+                            "another_unguarded_place",
+                            "shared_garage",
+                            "guarded_parking",
+                            "property_area_fenced"
+                        ]
+                    },
+                    "error_message": "Invalid parking place"
+                }
+            ]
+        },
+        {
+            "name": "vehicle_number_of_owners",
+            "type": "int",
+            "validation": [
+                {
+                    "type": "min_value",
+                    "params": {
+                        "min_val": 0
+                    },
+                    "error_message": "Number of additional owners must be at least 0"
+                }
+            ]
+        },
+        {
+            "name": "vehicle_used_abroad",
+            "type": "bool",
+            "validation": []
+        },
+        {
+            "name": "contractor_personal_id",
+            "type": "str",
+            "validation": [
+                {
+                    "type": "regex_pattern",
+                    "params": {
+                        "pattern": "^\\d{11}$"
+                    },
+                    "error_message": "Personal ID must be an 11-digit number"
+                }
+            ]
+        },
+        {
+            "name": "contractor_birth_date",
+            "type": "str",
+            "validation": [
+                {
+                    "type": "regex_pattern",
+                    "params": {
+                        "pattern": "^\\d{4}.\\d{2}.\\d{2}$"
+                    },
+                    "error_message": "Birth date must be in YYYY.MM.DD format"
+                }
+            ]
+        },
+        {
+            "name": "contractor_marital_status",
+            "type": "str",
+            "validation": [
+                {
+                    "type": "enum",
+                    "params": {
+                        "allowed_values": [
+                            "single",
+                            "married",
+                            "divorced",
+                            "widowed"
+                        ]
+                    },
+                    "error_message": "Invalid marital status"
+                }
+            ],
+            "nullable" : true
+        },
+        {
+            "name": "contractor_postal_code",
+            "type": "str",
+            "validation": [
+                {
+                    "type": "regex_pattern",
+                    "params": {
+                        "pattern": "^\\d{2}-\\d{3}$"
+                    },
+                    "error_message": "Postal code must be in format XX-XXX"
+                }
+            ]
+        },
+        {
+            "name": "contractor_driver_licence_date",
+            "type": "str",
+            "validation": [
+                {
+                    "type": "regex_patterm",
+                    "params": {
+                        "pattern": "%Y.%m.%d"
+                    },
+                    "error_message": "Licence date must be in YYYY.MM.DD format"
+                }
+            ]
+        },
+        {
+            "name": "contractor_children_under_26",
+            "type": "bool",
+            "validation": []
+        },
+        {
+            "name": "contractor_oldest_child_age",
+            "type": "int",
+            "validation": [
+                {
+                    "type": "min_value",
+                    "params": {
+                        "min_val": 0
+                    },
+                    "error_message": "Oldest child age cannot be negative"
+                }
+            ],
+            "nullable" : true
+        },
+        {
+            "name": "contractor_owner_driver_same",
+            "type": "bool",
+            "validation": []
+        },
+        {
+            "name": "mtpl_first_purchase_year",
+            "type": "int",
+            "validation": [
+                {
+                    "type": "min_value",
+                    "params": {
+                        "min_val": 1900
+                    },
+                    "error_message": "First purchase year must be after 1900"
+                },
+                {
+                    "type": "max_value",
+                    "params": {
+                        "max_val": 2025
+                    },
+                    "error_message": "First purchase year cannot be after 2025"
+                }
+            ],
+            "nullable" : true
+        },
+        {
+            "name": "contractor_mtpl_number_of_claims",
+            "type": "int",
+            "validation": [
+                {
+                    "type": "min_value",
+                    "params": {
+                        "min_val": 0
+                    },
+                    "error_message": "Number of claims cannot be negative"
+                }
+            ]
+        },
+        {
+            "name": "contractor_mtpl_first_claim",
+            "type": "int",
+            "validation": [
+                {
+                    "type": "min_value",
+                    "params": {
+                        "min_val": 1900
+                    },
+                    "error_message": "Claim year must be after 1900"
+                },
+                {
+                    "type": "max_value",
+                    "params": {
+                        "max_val": 2025
+                    },
+                    "error_message": "Claim year cannot be after 2025"
+                }
+            ],
+            "nullable" : true
+        },
+        {
+            "name": "contractor_mtpl_second_claim",
+            "type": "int",
+            "validation": [
+                {
+                    "type": "min_value",
+                    "params": {
+                        "min_val": 1900
+                    },
+                    "error_message": "Claim year must be after 1900"
+                },
+                {
+                    "type": "max_value",
+                    "params": {
+                        "max_val": 2025
+                    },
+                    "error_message": "Claim year cannot be after 2025"
+                }
+            ],
+            "nullable" : true
+        },
+        {
+            "name": "contractor_mtpl_third_claim",
+            "type": "int",
+            "validation": [
+                {
+                    "type": "min_value",
+                    "params": {
+                        "min_val": 1900
+                    },
+                    "error_message": "Claim year must be after 1900"
+                },
+                {
+                    "type": "max_value",
+                    "params": {
+                        "max_val": 2025
+                    },
+                    "error_message": "Claim year cannot be after 2025"
+                }
+            ],
+            "nullable" : true
+        },
+        {
+            "name": "contractor_mtpl_fourth_claim",
+            "type": "int",
+            "validation": [
+                {
+                    "type": "min_value",
+                    "params": {
+                        "min_val": 1900
+                    },
+                    "error_message": "Claim year must be after 1900"
+                },
+                {
+                    "type": "max_value",
+                    "params": {
+                        "max_val": 2025
+                    },
+                    "error_message": "Claim year cannot be after 2025"
+                }
+            ],
+            "nullable" : true
+        },
+        {
+            "name": "contractor_mtpl_fifth_claim",
+            "type": "int",
+            "validation": [
+                {
+                    "type": "min_value",
+                    "params": {
+                        "min_val": 1900
+                    },
+                    "error_message": "Claim year must be after 1900"
+                },
+                {
+                    "type": "max_value",
+                    "params": {
+                        "max_val": 2025
+                    },
+                    "error_message": "Claim year cannot be after 2025"
+                }
+            ],
+            "nullable" : true
+        },
+        {
+            "name": "additional_driver_under_26",
+            "type": "bool",
+            "validation": []
+        },
+        {
+            "name": "additional_driver_under_26_license_obtained_year",
+            "type": "int",
+            "validation": [
+                {
+                    "type": "min_value",
+                    "params": {
+                        "min_val": 1900
+                    },
+                    "error_message": "Licence obtained year must be after 1900"
+                },
+                {
+                    "type": "max_value",
+                    "params": {
+                        "max_val": 2025
+                    },
+                    "error_message": "Licence obtained year cannot be after 2025"
+                }
+            ],
+            "nullable" : true
+        }
+    ]
 }

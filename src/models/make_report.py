@@ -61,6 +61,10 @@ def plot_feature_distribution(feature: pd.Series, report_resources_path: Path, i
     plt.figure(figsize=(10, 6))
 
     if feature.dtype == 'bool' or feature.dtype == 'object':
+
+        if feature.nunique() > 60:
+            return
+
         sns.countplot(x=feature, stat='percent', width=0.3, order=feature.value_counts().index)
         plt.xticks(rotation=90)
         plt.title(f'Distribution of {feature.name}')
@@ -400,6 +404,10 @@ def plot_real_vs_predicted_by_feature(data_p: pd.DataFrame, predictions : pd.Ser
                                       target_variable: str, report_resources_path: Path, idx : int):
 
     if feature != target_variable:
+
+        if data_p[feature].dtype == 'object':
+            return
+
         data = data_p[[feature, target_variable]].copy()
     else:
         data = data_p[[feature]].copy()
@@ -664,7 +672,7 @@ def generate_report(service : str, data_name: str, target_variable: str, use_pdp
     load_manager = LoadManager(path_manager)
 
     model_name = path_manager.get_model_name(data_name, target_variable)
-
+    print(service, data_name)
     report_path = path_manager.get_report_path(service, data_name, target_variable)
     report_resources_path = path_manager.get_report_resource_path(report_path)
 
@@ -674,6 +682,8 @@ def generate_report(service : str, data_name: str, target_variable: str, use_pdp
     out_of_sample_predictions = load_manager.load_out_of_sample_predictions(data_name, model_name, target_variable)
     model_trials = load_manager.load_hyperopt_trials(data_name, model_name)
 
+    print(report_path)
+    print(report_resources_path)
     generate_report_util(model, data, features_info, features_model, target_variable, out_of_sample_predictions, model_trials, report_path,
                          report_resources_path, use_pdp, use_shap)
 
