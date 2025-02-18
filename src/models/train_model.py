@@ -2,10 +2,8 @@ import os
 import sys
 
 import click
-from typing import Optional, List, Union, final
-
 from mlxtend.classifier import OneRClassifier
-from hyperopt import STATUS_OK, SparkTrials, Trials, fmin, tpe, rand
+from hyperopt import STATUS_OK, fmin, tpe
 
 from sklearn.model_selection import train_test_split, StratifiedKFold
 
@@ -17,6 +15,7 @@ from sklearn.metrics import (
     log_loss,
     f1_score
 )
+
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -87,7 +86,7 @@ def _print_fold_metrics(fold_num: int, metrics: dict, is_classification: bool, m
     print(f"\nSummary for fold {fold_num}")
     if is_classification:
         print(f"Log Loss: {metrics['log_loss']:.3f}")
-        print(f"F1 score: {metrics['f1_score']:.3f}")
+        print(f"AUC score: {metrics['aucpr']:.3f}")
     else:
         print(f"MAE: {metrics['mae']:.3f} ({metrics['mae'] / mean_price * 100:.3f}% of mean {target_variable})")
         print(f"RMSE: {metrics['rmse']:.3f}")
@@ -104,14 +103,14 @@ def _print_final_regression_metrics(k, mae, mae_std, mape, mape_std, rmse, rmse_
 def _calculate_classification_metrics(metrics: dict, k: int, debug: bool) -> Tuple[float, float]:
     mean_log_loss = np.mean(metrics['log_loss'])
     std_log_loss = np.std(metrics['log_loss'])
-    mean_f1_score = np.mean(metrics['f1_score'])
-    std_f1_score = np.std(metrics['f1_score'])
+    mean_aucpr_score = np.mean(metrics['aucpr'])
+    std_aucpr_score = np.std(metrics['aucpr'])
 
     if debug:
         print(f"\nMean Log Loss over {k} fold CV: {mean_log_loss:.3f} ± {std_log_loss:.3f}")
-        print(f"Mean F1-score over {k} fold CV: {mean_f1_score:.3f} ± {std_f1_score:.3f}")
+        print(f"Mean AUCPR-score over {k} fold CV: {mean_aucpr_score:.3f} ± {std_aucpr_score:.3f}")
 
-    return mean_log_loss, mean_f1_score
+    return mean_log_loss, mean_aucpr_score
 
 
 def _calculate_regression_metrics(metrics: dict, k: int, mean_price: float, target_variable: str, debug: bool) -> Tuple[
@@ -142,7 +141,7 @@ def kFoldCrossValidation(
 ) -> Tuple[Dict[str, float], pd.Series]:
 
     metrics = {
-        'classification': {'log_loss': [], 'f1_score': []},
+        'classification': {'log_loss': [], 'aucpr': []},
         'regression': {'mae': [], 'rmse': [], 'mape': []}
     }
 
@@ -157,16 +156,12 @@ def kFoldCrossValidation(
 
         model, test_predictions, eval_results = model_train(train_data, test_data, features, target_variable, is_classification, param)
 
-        test_data_test = test_data.sample(n = 1).sample(n = 9, replace = True)
-        test_data_test['vehicle_power'] = [50, 51, 52, 100, 101, 102, 150, 151, 152]
-
-
         predictions.iloc[test_ix] = test_predictions
 
         if is_classification:
             fold_metrics = {
-                'log_loss': eval_results['eval']['log_loss'][-1],
-                'f1_score': eval_results['eval']['f1_score'][-1]
+                'log_loss': eval_results['eval']['logloss'][-1],
+                'aucpr': eval_results['eval']['aucpr'][-1]
             }
             for metric, value in fold_metrics.items():
                 metrics['classification'][metric].append(value)
@@ -184,19 +179,19 @@ def kFoldCrossValidation(
 
     if is_classification:
         mean_log_loss = np.mean(metrics['classification']['log_loss'])
-        mean_f1_score = np.mean(metrics['classification']['f1_score'])
+        mean_f1_score = np.mean(metrics['classification']['aucpr'])
         std_log_loss = np.std(metrics['classification']['log_loss'])
-        std_f1_score = np.std(metrics['classification']['f1_score'])
+        std_f1_score = np.std(metrics['classification']['aucpr'])
 
         if debug:
             print(f"\nMean Log Loss over {k} fold CV: {mean_log_loss:.3f} ± {std_log_loss:.3f}")
-            print(f"Mean F1-score over {k} fold CV: {mean_f1_score:.3f} ± {std_f1_score:.3f}")
+            print(f"Mean AUC-score over {k} fold CV: {mean_f1_score:.3f} ± {std_f1_score:.3f}")
 
         final_metrics = {
             'log_loss': mean_log_loss,
-            'f1_score': mean_f1_score,
+            'aucpr': mean_f1_score,
             'log_loss_std': std_log_loss,
-            'f1_score_std': std_f1_score
+            'aucpr_std': std_f1_score
         }
 
     else:
@@ -227,15 +222,16 @@ def train_model_util(data: pd.DataFrame,
                      features: list,
                      target_variable: str,
                      is_classification: bool,
+                     model_config : ModelConfig,
                      previous_trials : Trials = None,
-                     model_config : dict = None):
+                     ):
 
     train_data, validation_data = train_test_split(data, test_size = 0.1, random_state = 42)
 
     def objective(space):
         params = space.copy()
-        if model_config:
-            params['monotone_constraints'] = model_config['monotone_constraints']
+        params['monotone_constraints'] = model_config.monotone_constraints
+
         metrics, predictions = kFoldCrossValidation(
             k=4,
             data=train_data,
@@ -245,7 +241,11 @@ def train_model_util(data: pd.DataFrame,
             param=params,
             debug=False
         )
-        return {"loss": metrics['mae'], 'status': STATUS_OK}
+
+        if is_classification:
+            return {"loss" : metrics['log_loss'], 'status' : STATUS_OK}
+        else:
+            return {"loss": metrics['mae'], 'status': STATUS_OK}
 
     logging.info("Starting hyper-parameter tuning...")
     if is_classification:
@@ -256,7 +256,7 @@ def train_model_util(data: pd.DataFrame,
     if previous_trials is not None:
         trials = previous_trials
         trials.refresh()
-        evals = len(previous_trials) + 20
+        evals = len(previous_trials) + MAX_EVALS_RETRAIN
     else:
         trials = Trials()
         evals = MAX_EVALS
@@ -269,12 +269,12 @@ def train_model_util(data: pd.DataFrame,
         trials=trials,
         return_argmin=False
     )
-    if model_config:
-        best_hyperparams['monotone_constraints'] = model_config['monotone_constraints']
+    best_hyperparams['monotone_constraints'] = model_config.monotone_constraints
 
     model, predictions, eval_results = model_train(train_data, train_data, features, target_variable, is_classification, best_hyperparams)
     predictions = predict(model, validation_data[features])
     validation_data['preds_validation'] = predictions
+
     print("\n=== Validation Set Performance ===")
     print("Comparing actual vs predicted values:")
     print(validation_data[[target_variable, 'preds_validation']])
@@ -287,21 +287,23 @@ def train_model_util(data: pd.DataFrame,
     metrics, predictions = kFoldCrossValidation(k=4, data=data, features=features, target_variable=target_variable,
                                                 is_classification=is_classification, param=best_hyperparams, debug=True)
 
-    # Generate both in-sample and out-of-sample predictions
+    print(predictions)
     data['preds_out_of_sample'] = predictions
     data['preds_in_sample'] = predict(model, data[features])
 
-    print("\n=== Final Model Performance ===")
-    print("Predictions by Contractor ID:")
-    print(data[['contractor_personal_id', target_variable, 'preds_out_of_sample', 'preds_in_sample']])
+    print(data[[target_variable, 'preds_out_of_sample', 'preds_in_sample']])
 
-    print("\nModel Performance Metrics:")
-    print(f"In-Sample MAPE: {mean_absolute_percentage_error(data[target_variable], data['preds_in_sample']):.3f}%")
-    print(f"Out-of-Sample MAPE: {mean_absolute_percentage_error(data[target_variable], predictions):.3f}%")
-    print(f"In-Sample MAE: {mean_absolute_error(data[target_variable], data['preds_in_sample']):.3f}")
-    print(f"Out-of-Sample MAE: {mean_absolute_error(data[target_variable], predictions):.3f}")
 
-    return model, best_hyperparams, predictions, trials, metrics['mae_percent']
+    if not is_classification:
+        print("\nModel Performance Metrics:")
+        print(f"In-Sample MAPE: {mean_absolute_percentage_error(data[target_variable], data['preds_in_sample']):.3f}%")
+        print(f"Out-of-Sample MAPE: {mean_absolute_percentage_error(data[target_variable], predictions):.3f}%")
+        print(f"In-Sample MAE: {mean_absolute_error(data[target_variable], data['preds_in_sample']):.3f}")
+        print(f"Out-of-Sample MAE: {mean_absolute_error(data[target_variable], predictions):.3f}")
+
+    metric_to_return = metrics['log_loss'] if is_classification else metrics['mae_percent']
+
+    return model, best_hyperparams, predictions, trials, metric_to_return
 
 
 @click.command(name='train_model')
@@ -309,7 +311,7 @@ def train_model_util(data: pd.DataFrame,
 @click.option('--data_name', required=True, type=click.STRING)
 @click.option('--target_variable', required=True, type=click.STRING)
 @click.option('--model_config_name', required = False, type = click.STRING)
-def train_model(service, data_name, target_variable, model_config_name = None):
+def train_model(service, data_name, target_variable, model_config_name):
 
     path_manager = PathManager(service)
     load_manager = LoadManager(path_manager)
@@ -318,45 +320,37 @@ def train_model(service, data_name, target_variable, model_config_name = None):
     model_name = path_manager.get_model_name(data_name, target_variable, model_config_name)
 
     data, features_info, features_on_top, features_model = load_manager.load_data(data_name, target_variable)
-
     on_top = load_manager.load_on_top_file()
 
-    model_config = None
-    if model_config_name:
-        model_config = load_manager.load_model_config(data_name, model_config_name)
+    model_config = load_manager.load_model_config(data_name, model_config_name)
 
     data = apply_on_top(data, target_variable, target_variable, on_top)
     data = apply_on_top(data, f'corrected_{target_variable}', target_variable, on_top, reverse=True)
     data['diff'] = data[f'{target_variable}_orig'] - data[f'corrected_corrected_{target_variable}']
     print(data[[f'{target_variable}_orig', f'corrected_{target_variable}_orig', f'corrected_corrected_{target_variable}', 'diff']])
-
+    print(data[target_variable].isna().sum())
     trials = load_manager.find_best_previous_trials(data_name, model_name)
 
-
-    if model_config:
-        for feature_to_exclude in model_config['features_to_exclude']:
-            features_model.remove(feature_to_exclude)
-
+    features_model = model_config.process_features(features_model)
     model, hyperparameters, out_of_sample_predictions, trials, percent_mMae \
         = train_model_util(data,
                            features_model,
                            target_variable,
                            is_classification=False,
+                           model_config=model_config,
                            previous_trials = trials,
-                           model_config = model_config
                            )
 
     export_manager.export_model(model, hyperparameters, out_of_sample_predictions, trials, data_name,  model_name)
-
     report_path = path_manager.get_report_path(data_name, target_variable, model_config_name)
     report_resources_path = path_manager.get_report_resource_path(report_path)
 
-    make_report.generate_report_util(model, data, features_info, features_model, target_variable,
-                                     out_of_sample_predictions, trials, report_path,
-                                     report_resources_path, use_pdp=True, use_shap=False)
-    
+    # make_report.generate_report_util(model, data, features_info, features_model, target_variable,
+    #                                  out_of_sample_predictions, trials, report_path,
+    #                                 report_resources_path, use_pdp=True, use_shap=False)
+    #
     error_overview_path = path_manager.get_error_overview_path()
-    error_overview.update_error_overview(round(percent_mMae, 2), data_name, target_variable, error_overview_path)
+    error_overview.update_error_overview(round(percent_mMae, 2), data_name, target_variable, model_config.model_config_name, error_overview_path)
 
 
 

@@ -11,7 +11,6 @@ from matplotlib.ticker import PercentFormatter
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pandas import CategoricalDtype
-from setuptools.command.rotate import rotate
 import shap
 from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error, mean_absolute_error
 
@@ -29,9 +28,9 @@ warnings.filterwarnings("ignore", category=UserWarning, module="matplotlib.ticke
 os.environ["QT_QPA_PLATFORM"] = "wayland"
 
 
-def make_data_overview(data: pd.DataFrame, report_resources_path: Path, idx) -> None:
-    unique = pd.DataFrame(data.nunique()).rename(columns={0: 'unique'}).T
-    describe = pd.concat([data.describe().round(1), unique])
+def make_data_overview(data: pd.DataFrame, features : List[str], report_resources_path: Path, idx) -> None:
+    unique = pd.DataFrame(data[features].nunique()).rename(columns={0: 'unique'}).T
+    describe = pd.concat([data[features].describe().round(1), unique])
     describeStyle = describe.T.style.format(precision=2)
     fig, ax = plt.subplots(figsize=(10, len(describeStyle.data) * 0.5))
     ax.axis('off')
@@ -164,6 +163,10 @@ def partial_dependence_analysis(model: xgboost.Booster, data: pd.DataFrame, feat
     importance_dict = {}
     pdp_dict = {}
     for feature in features_model:
+
+        if data[feature].nunique() > 300:
+            continue
+
         if feature in FEATURES_TO_SKIP_PDP:
             continue
 
@@ -191,6 +194,87 @@ def partial_dependence_analysis(model: xgboost.Booster, data: pd.DataFrame, feat
     return pdp_dict, importance_dict
 
 
+def partial_dependence_analysis_new(model: xgboost.Booster, data: pd.DataFrame, features_model: list,
+                                    grid_resolution: int = 10) -> tuple:
+    """
+    Compute partial dependence plots (PDP) and a feature importance proxy (std of PDP curve)
+    for each feature in features_model (unless skipped).
+
+    For numeric features, the predictions over the grid are computed in a vectorized fashion
+    (one batched prediction call) to speed up the computation.
+
+    Parameters:
+      - model: an xgboost.Booster object.
+      - data: a pandas DataFrame containing the data.
+      - features_model: list of feature names used for prediction.
+      - grid_resolution: number of grid points for continuous features.
+
+    Returns:
+      A tuple (pdp_dict, importance_dict) where:
+        - pdp_dict maps each feature to a tuple (grid_values, partial_dependence_values)
+        - importance_dict maps each feature to the standard deviation of its partial dependence values.
+    """
+    pdp_dict = {}
+    importance_dict = {}
+
+    def batch_predict(model, X):
+        dmatrix = xgboost.DMatrix(X, enable_categorical=True)
+        return model.predict(dmatrix)
+
+    for feature in features_model:
+        if feature in FEATURES_TO_SKIP_PDP:
+            continue
+
+        logging.info(f"Doing partial dependence for {feature} dtype is {data[feature].dtype}")
+
+        if data[feature].dtype == 'bool':
+            feature_values = data[feature].dropna().unique()
+            pdp_values = []
+            for val in feature_values:
+                data_mod = data.copy()
+                data_mod[feature] = val
+                preds = batch_predict(model, data_mod[features_model])
+                pdp_values.append(np.mean(preds))
+            grid = feature_values
+        elif isinstance(data[feature].dtype, CategoricalDtype):
+            feature_values = data[feature].dropna().unique()
+            pdp_values = []
+            for val in feature_values:
+                data_mod = data.copy()
+                data_mod[feature] = val
+                data_mod[feature] = pd.Categorical(data_mod[feature], categories=data[feature].cat.categories)
+                preds = batch_predict(model, data_mod[features_model])
+                pdp_values.append(np.mean(preds))
+            grid = feature_values
+        else:
+            print(data[feature].min())
+            print(data[feature].max())
+            try:
+                grid = np.linspace(data[feature].dropna().min(), data[feature].dropna().max(), grid_resolution).astype(int)
+            except Exception as e:
+                continue
+            X = data[features_model].copy()
+            n_rows = X.shape[0]
+            # Replicate the data for each grid value
+            X_rep = pd.concat([X] * len(grid), ignore_index=True)
+
+            # For each block of rows, replace the column with the grid value.
+            for i, val in enumerate(grid):
+                start = i * n_rows
+                end = (i + 1) * n_rows
+                X_rep.loc[start:end, feature] = val
+
+            # Batched prediction call
+            preds_all = batch_predict(model, X_rep)
+            preds_all = np.array(preds_all).reshape(len(grid), n_rows)
+            # Average over rows for each grid point
+            pdp_values = preds_all.mean(axis=1)
+
+        # Save the PDP and compute the importance measure (std. deviation of the PDP curve)
+        pdp_dict[feature] = (grid, pdp_values)
+        importance_dict[feature] = np.std(pdp_values)
+
+    return pdp_dict, importance_dict
 def plot_pdp_importance(features: list, importances, title="Feature Importance",
                         xlabel="Partial Dependence Feature Importance", ylabel="Features", values_format="{:.2f}",
                         save_path: Path = None, **kwargs):
@@ -257,7 +341,10 @@ def plot_pdps(features: list, pdp_dict: dict, report_resources_path: Path, idx: 
     for feature in features:
         if feature in FEATURES_TO_SKIP_PDP:
             continue
-        feature_range, pdp_values = pdp_dict[feature]
+        try:
+            feature_range, pdp_values = pdp_dict[feature]
+        except Exception as e:
+            continue
         plt.figure(figsize=(8, 6))
         sns.lineplot(x=feature_range, y=pdp_values, label=feature)
 
@@ -342,10 +429,12 @@ def plot_real_vs_predicted_by_feature_numeric(data: pd.DataFrame, feature: str,
     if data[feature].nunique() == 1:
         return None, None, None
 
+    print(feature)
     data['quantiles'] = pd.qcut(data[feature], num_quantiles, labels=False, duplicates='drop')
-    quantile_values = data.groupby('quantiles')[feature].mean().values.round(decimals=2)
+    quantile_values = data.groupby('quantiles')[feature].mean().dropna().values.round(decimals=2)
     mean_values = get_mean_values(data, feature, target_variable, is_numeric=True)
-
+    if len(quantile_values) == 0:
+        return None, None, None
     ticks = np.round(np.linspace(quantile_values.min(), quantile_values.max(), len(quantile_values)), 2)
 
     norm = plt.Normalize(vmin=mean_values['mean_error'].min(), vmax=mean_values['mean_error'].max())
@@ -418,6 +507,7 @@ def plot_real_vs_predicted_by_feature(data_p: pd.DataFrame, predictions : pd.Ser
 
     data = data.dropna(subset=[feature, target_variable])
     fig, axes, mean_values = None, None, None
+
     if pd.api.types.is_numeric_dtype(data[feature]):
         fig, axes, mean_values = plot_real_vs_predicted_by_feature_numeric(data, feature, target_variable)
 
@@ -449,27 +539,35 @@ def plot_real_vs_predicted_by_feature(data_p: pd.DataFrame, predictions : pd.Ser
     plt.savefig(output_path, dpi = 150)
     plt.close()
 
-def get_k_largest_errors(data: pd.DataFrame, out_of_sample_predictions : pd.Series, errors: pd.Series, k: int,
-                         report_resources_path: Path, idx : int):
-    dc = data.copy()
+
+def get_k_largest_errors(data: pd.DataFrame, features : List[str], out_of_sample_predictions: pd.Series, errors: pd.Series, k: int,
+                         report_resources_path: Path, idx: int):
+    dc = data[features].copy()
     dc['error'] = errors
     dc['abs_error'] = abs(errors)
     dc['model_prediction'] = out_of_sample_predictions
 
     k_largest_errors = dc.sort_values(by='abs_error', ascending=False).iloc[:k]
-    k_largest_errors_style = k_largest_errors.style.format(precision=2)
 
-    fig, ax = plt.subplots(figsize=(10, len(k_largest_errors_style.data) * 0.5))
+    k_largest_errors_transposed = k_largest_errors.transpose()
+
+    k_largest_errors_style = k_largest_errors_transposed.style.format(precision=2)
+
+    fig, ax = plt.subplots(figsize=(10, len(k_largest_errors_style.data) * 0.4))  # Adjust 0.4 as needed
     ax.axis('off')
-    table = ax.table(cellText=k_largest_errors_style.data.values, colLabels=k_largest_errors_style.data.columns,
-                     rowLabels=k_largest_errors_style.data.index, cellLoc='center', loc='center')
+
+    table = ax.table(cellText=k_largest_errors_style.data.values,
+                     colLabels=k_largest_errors_style.data.columns,
+                     rowLabels=k_largest_errors_style.data.index,
+                     cellLoc='center', loc='center')
+
     table.auto_set_font_size(False)
     table.set_fontsize(10)
     table.auto_set_column_width(col=list(range(len(k_largest_errors_style.data.columns))))
+
     output_path = PathManager.get_report_k_largest_errors_path(report_resources_path, k, idx)
     plt.savefig(output_path, bbox_inches='tight', dpi=200)
     plt.close()
-
 
 def plot_learning_curve(trials : Trials, report_resources_path: Path, idx : int) -> None:
     losses = [x['result']['loss'] for x in trials.trials]
@@ -597,7 +695,11 @@ def generate_report_util(
 
 ):
     data = reconstruct_categorical_variables(data)
-    features_all = features_model + features_info
+    features_all = features_info + features_model
+    all_info  = features_all + [f'{target_variable}_orig',
+                                f'corrected_{target_variable}_orig',
+                                f'corrected_corrected_{target_variable}',
+                                'diff', target_variable]
 
     if target_variable.startswith('log_'):
         data[target_variable] = np.exp(data[target_variable])
@@ -620,19 +722,19 @@ def generate_report_util(
     importance = None
     shap_values = None
     if use_pdp:
-        pdp_dict, importance = partial_dependence_analysis(model, data, features_model)
+        pdp_dict, importance = partial_dependence_analysis_new(model, data, features_model)
     if use_shap:
         shap_values = compute_shap_values(model, data, features_model, target_variable)
         shap_values.feature_names = features_model
 
     section_functions = {
-        "Data Overview": lambda idx: make_data_overview(data, report_resources_path, idx),
+        "Data Overview": lambda idx: make_data_overview(data, all_info, report_resources_path, idx),
         "Error Overview": lambda idx: make_error_overview(real, out_of_sample_predictions, report_resources_path, idx),
         "Error Quantiles": lambda idx: make_error_quantiles(real, out_of_sample_predictions, report_resources_path,
                                                             None, idx),
         "Error Percentage Distribution": lambda idx: plot_hist_error_percentage(errors_percentage,
                                                                                 report_resources_path, idx),
-        "Top k Largest Errors": lambda idx: get_k_largest_errors(data, out_of_sample_predictions, errors, 10
+        "Top k Largest Errors": lambda idx: get_k_largest_errors(data, all_info, out_of_sample_predictions, errors, 10
                                                                  , report_resources_path, idx),
         "Feature Importance": lambda idx: plot_feature_importance(model, importance,
                                                                   report_resources_path, idx),
@@ -664,20 +766,23 @@ def generate_report_util(
 @click.option("--service", required=True, type=click.STRING)
 @click.option("--data_name", required=True, type=click.STRING)
 @click.option("--target_variable", required=True, type=click.STRING)
+@click.option("--model_config_name", required=True, type=click.STRING)
 @click.option('--use_pdp', default=False, is_flag=True, help='Useful when testing, since pdp plots take a long time...')
 @click.option('--use_shap', default=False, is_flag=True, help='Useful when testing, since shap plots take a long time...')
-def generate_report(service : str, data_name: str, target_variable: str, use_pdp: bool, use_shap : bool):
+def generate_report(service : str, data_name: str, target_variable: str, model_config_name : str, use_pdp: bool, use_shap : bool):
 
     path_manager = PathManager(service)
     load_manager = LoadManager(path_manager)
 
-    model_name = path_manager.get_model_name(data_name, target_variable)
-    print(service, data_name)
+    model_name = path_manager.get_model_name(data_name, target_variable, model_config_name)
     report_path = path_manager.get_report_path(service, data_name, target_variable)
     report_resources_path = path_manager.get_report_resource_path(report_path)
 
     data, features_info, features_on_top, features_model = load_manager.load_data(data_name, target_variable)
 
+    model_config = load_manager.load_model_config(data_name, model_config_name)
+    for col in model_config['features_to_exclude']:
+        features_model.remove(col)
     model = load_manager.load_model(data_name, model_name)
     out_of_sample_predictions = load_manager.load_out_of_sample_predictions(data_name, model_name, target_variable)
     model_trials = load_manager.load_hyperopt_trials(data_name, model_name)

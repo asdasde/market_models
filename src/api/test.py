@@ -48,6 +48,7 @@ class APITester:
     async def call_endpoint(self, client: httpx.AsyncClient, endpoint: str,
                             test_features: Dict) -> Tuple[Optional[Dict], int]:
         url = f"{BASE_URL}{ENDPOINTS[endpoint]}"
+        print(test_features)
         response = await client.post(url, json=test_features, headers=self.headers)
 
         if response.status_code != 200:
@@ -131,7 +132,7 @@ async def main():
     }
 
     # Run tests
-    n_iterations = 1
+    n_iterations = 10
     start_time = datetime.now()
 
     for i in range(n_iterations):

@@ -3,6 +3,7 @@ import sys
 import re
 
 import numpy as np
+from pyspark.sql.connect.functions import second
 from sklearn.preprocessing import OrdinalEncoder
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -162,6 +163,7 @@ def add_bracket_features(data : pd.DataFrame, features_to_add_brackets : List[st
 
     bracket_features = []
     for feature in features_to_add_brackets:
+        print(feature)
         data, brackets_feature = add_bracket_feature(data, target_variables, feature, load_manager)
         bracket_features = bracket_features + brackets_feature
     return data, bracket_features
@@ -231,6 +233,11 @@ def make_processed_crawler_data(datas: List[pd.DataFrame], data_name_reference :
     if 'payment_method' not in data.columns:
         data['payment_method'] = 'bank_transfer'
 
+    data['vehicle_fuel_type'] = data['vehicle_fuel_type'].replace({
+        'Benzin' : 'petrol',
+        'benzin' : 'petrol'
+    })
+
     data['payment_method'] = data['payment_method'].fillna('bank_transfer')
     data['payment_frequency'] = data['payment_frequency'].fillna('yearly')
 
@@ -299,7 +306,7 @@ def make_processed_netrisk_casco_like_data(datas : List[pd.DataFrame], data_name
         pass
 
 
-    target_variables = DEFAULT_TARGET_VARIABLES
+    target_variables = DEFAULT_TARGET_VARIABLES['netrisk_casco']
     data = add_is_recent(data)
 
     data['vehicle_trim'] = data['vehicle_model']
@@ -336,6 +343,13 @@ def make_processed_netrisk_casco_like_data(datas : List[pd.DataFrame], data_name
         data[rider] = data[rider].map({'yes' : True, 'no' : False})
     data[NETRISK_CASCO_RIDERS] = data[NETRISK_CASCO_RIDERS].astype(bool)
 
+    data['vehicle_fuel_type'] = data['vehicle_fuel_type'].replace(
+        {'benzin' : 'petrol'}
+    )
+
+    data['payment_frequency'] = data['payment_frequency'].replace({
+        'half_year' : 'half_yearly'
+    })
 
     features_to_add_bracket = ['contractor_age', 'postal_code']
     data, bracket_features = add_bracket_features(data, features_to_add_bracket, target_variables, load_manager)
@@ -348,7 +362,7 @@ def make_processed_netrisk_casco_like_data(datas : List[pd.DataFrame], data_name
 
     latest_model_training_data = 'netrisk_casco_v11'
     features_model = LoadManager.reconstruct_features_model(data_name_reference[latest_model_training_data]['features_model'])
-
+    print(features_model, target_variables)
     data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
     data = data.set_index('unique_id')
     if all([x in data.columns for x in target_variables]):
@@ -579,14 +593,20 @@ def make_processed_punkta_data(datas : List[pd.DataFrame], data_name_reference :
 def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : dict, encoding_type : str, path_manager : PathManager, load_manager : LoadManager):
 
 
-    MUBI_CATEGORICAL = ['vehicle_maker', 'vehicle_fuel_type', 'voivodeship',
-                        'county', 'vehicle_parking_place', 'vehicle_usage', 'vehicle_first_registration_country']
+    MUBI_CATEGORICAL = ['vehicle_maker', 'vehicle_fuel_type', 'vehicle_model',
+                        'vehicle_parking_place', 'vehicle_usage', 'vehicle_first_registration_country',
+                        'vehicle_planned_annual_mileage',
+                        'contractor_marital_status',
+                        'voivodeship', 'county']
 
-    MUBI_FEATURES_INFO = ['id_case', 'crawling_date', 'policy_start_date', 'vehicle_type', 'contractor_birth_date',
-                          'contractor_driver_licence_date',
-                          'vehicle_make_year', 'contractor_personal_id', 'vehicle_licence_plate', 'vehicle_trim',
-                          'vehicle_eurotax_version', 'vehicle_infoexpert_model',
-                          'vehicle_infoexpert_version']
+    MUBI_FEATURES_INFO = ['id_case', 'crawling_date', 'policy_start_date',
+                          'contractor_birth_date',
+                          'contractor_driver_licence_date', 'contractor_personal_id',
+                          'vehicle_make_year',
+                          'vehicle_trim', 'vehicle_eurotax_version',
+                          'vehicle_infoexpert_model', 'vehicle_infoexpert_version',
+                          'vehicle_type', 'vehicle_licence_plate']
+
     MUBI_FEATURES_ON_TOP = []
 
     MUBI_VEHICLE_VALUE_FEATURES = ['balcia_vehicle_value', 'beesafe_vehicle_value',
@@ -597,17 +617,32 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
                                    'uniqa_vehicle_value', 'wefox_vehicle_value',
                                    'wiener_vehicle_value', 'ycd_vehicle_value']
 
-    MUBI_FEATURES_MODEL = ['vehicle_engine_size', 'vehicle_power', 'vehicle_number_of_seats', 'vehicle_number_of_doors',
-                           'vehicle_net_weight', 'vehicle_gross_weight',
-                           'vehicle_age', 'vehicle_steering_wheel_right', 'vehicle_imported',
-                           'contractor_age', 'licence_at_age', 'driver_experience', 'contractor_mtpl_policy_years',
-                           'contractor_mtpl_number_of_claims', 'additional_driver_under_26', 'additional_driver_under_26_license_obtained_year',
-                           'latitude', 'longitude',
-                           'postal_code_population', 'postal_code_area', 'postal_code_population_density',
-                           'vehicle_weight_to_power_ratio',
-                           ] + MUBI_VEHICLE_VALUE_FEATURES + MUBI_CATEGORICAL
+    MUBI_MTPL_CLAIM_YEARS = [f'contractor_mtpl_{x}_claim' for x in ['first', 'second', 'third', 'fourth', 'fifth']]
 
-    MUBI_NULLABLE_INT = ['additional_driver_under_26_license_obtained_year']
+
+
+    MUBI_FEATURES_MODEL = [
+       # VEHICLE INFO
+       'vehicle_engine_size', 'vehicle_power','vehicle_weight_to_power_ratio',
+       'vehicle_net_weight', 'vehicle_gross_weight',
+       'vehicle_number_of_seats', 'vehicle_number_of_doors',
+       'vehicle_age',
+       'vehicle_steering_wheel_right',
+       'vehicle_imported', 'vehicle_imported_within_last_12_months',
+       # CONTRACTOR INFO
+       'contractor_age', 'licence_at_age', 'driver_experience',
+       'latitude', 'longitude',
+       'postal_code_population', 'postal_code_area', 'postal_code_population_density',
+       # POLICY INFO
+       'contractor_mtpl_policy_years',
+       'contractor_mtpl_number_of_claims', 'contractor_mtpl_years_since_last_damage_caused',
+       # DISCOUNTS
+       'contractor_children_under_26',
+       'additional_driver_under_26', 'additional_driver_under_26_license_obtained_year',
+       'GENERALI_pesel_ab_test'
+    ] + MUBI_VEHICLE_VALUE_FEATURES + MUBI_CATEGORICAL
+
+    MUBI_NULLABLE_INT = ['additional_driver_under_26_license_obtained_year', 'contractor_mtpl_years_since_last_damage_caused']
     MUBI_NULLABLE_FLOAT = MUBI_VEHICLE_VALUE_FEATURES
 
     processed_datas = []
@@ -622,6 +657,8 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
         processed_datas.append(processed_data)
 
     data = pd.concat(processed_datas)
+
+    target_variables = get_target_variables(data.columns, suffixes=['-price', '-isolated_price'])
 
     if 'id_case' not in data.columns:
         data['id_case'] = range(len(data))
@@ -643,9 +680,15 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
 
     data['postal_code_population_density'] = round(data['postal_code_population'] / data['postal_code_area'], 3)
 
-    data['contractor_birth_year'] = data['contractor_birth_date'].apply(lambda x: int(x.split('.')[0]))
+
+    data['contractor_birth_year'] = data['contractor_birth_date'].apply(lambda x: int(str(x).split('.')[0].split('-')[0]))
+
     data['contractor_driver_licence_year'] = data['contractor_driver_licence_date'].apply(
-        lambda x: int(x.split('.')[0]))
+        lambda x: int(str(x).split('.')[0].split('-')[0]))
+
+    print(data[['contractor_birth_year', 'contractor_driver_licence_year']])
+
+    data['policy_start_date'] = data['policy_start_date'].fillna(datetime.today().strftime("%Y.%m.%d"))
 
     data['vehicle_age'] = CURRENT_YEAR - data['vehicle_make_year']
     data['contractor_age'] = (pd.to_datetime(data['policy_start_date'], format='%Y.%m.%d') -
@@ -660,6 +703,8 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
                               pd.to_datetime(data['contractor_driver_licence_date'], format='%Y.%m.%d'))
     data['driver_experience'] = data['driver_experience'].apply(lambda x: np.floor(x.days / 365.25))
 
+    print(data[['contractor_age', 'licence_at_age', 'driver_experience']])
+
     data['pesel_last_digit'] = data['contractor_personal_id'].apply(lambda x: int(str(x)[-1]))
     data['generali_pesel_ab_test'] = data['pesel_last_digit'].apply(lambda x: 0 if (x == 0) or (x < 8 and x % 2) else 1)
 
@@ -667,16 +712,25 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
 
     data['contractor_mtpl_policy_years'] = CURRENT_YEAR - data['mtpl_first_purchase_year']
 
+    def get_last_damage(row):
+        num_claims = row['contractor_mtpl_number_of_claims']
+        if num_claims == 0:
+            return None
 
+        claim_cols = MUBI_MTPL_CLAIM_YEARS[:num_claims]
+        return CURRENT_YEAR - max(row[claim_cols])
+
+    data['contractor_mtpl_years_since_last_damage_caused'] = (
+        data.apply(lambda x : get_last_damage(x), axis = 1)
+    )
+
+    data['pesel_last_digit'] = data['contractor_personal_id'].apply(lambda x: int(str(x)[-1]))
+    data['GENERALI_pesel_ab_test'] = data['pesel_last_digit'].apply(lambda x: 0 if (x == 0) or (x < 8 and x % 2) else 1)
 
     features_info = MUBI_FEATURES_INFO
     features_on_top = MUBI_FEATURES_ON_TOP
-    features_model = (
-            MUBI_FEATURES_MODEL +
-            data.filter(like='__dummy').columns.to_list()
-    )
+    features_model = MUBI_FEATURES_MODEL
 
-    target_variables = get_target_variables(data.columns, suffixes=['-price', '-isolated_price'])
     data[MUBI_CATEGORICAL] = data[MUBI_CATEGORICAL].astype('category')
 
     for vehicle_value_col in MUBI_VEHICLE_VALUE_FEATURES:
@@ -684,10 +738,6 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
 
     data[MUBI_NULLABLE_INT] = data[MUBI_NULLABLE_INT].astype('Int64')
     data[MUBI_NULLABLE_FLOAT] = data[MUBI_NULLABLE_FLOAT].astype('Float64')
-
-
-    for col in [col for col in target_variables if 'GENERALI' in col or 'PROAMA' in col]:
-        data[col] = data[col] - 0.1 * data[col] * data['generali_pesel_ab_test']
 
     data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
     data = data[features_info + features_on_top + features_model + target_variables]
@@ -749,11 +799,6 @@ def make_processed_mubi_data_old(datas : List[pd.DataFrame], data_name_reference
            data.filter(like ='__dummy').columns.to_list()
     )
 
-    data['pesel_last_digit'] = data['contractor_personal_id'].apply(lambda x : int(str(x)[-1]))
-    data['generali_pesel_ab_test'] = data['pesel_last_digit'].apply(lambda x : 0 if (x == 0) or (x < 8 and x % 2) else 1)
-
-    for col in [col for col in target_variables if 'GENERALI' in col or 'PROAMA' in col]:
-        data[col] = data[col] - 0.1 * data[col] * data['generali_pesel_ab_test']
 
     data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
     data = data[features_info + features_on_top + features_model + target_variables]
