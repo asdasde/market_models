@@ -6,7 +6,8 @@ TEST_SIZE = 0.1
 RANDOM_STATE = 42
 ERROR_MODEL_CLASSIFICATION_THRESHOLD = 0.8
 PRESENCE_MODEL_CLASSIFICATION_THRESHOLD = 0.5
-MAX_EVALS = 25
+MAX_EVALS = 20
+MAX_EVALS_RETRAIN = 0
 
 DEFAULT_PARAMS_REGRESSION = {
     'objective': 'reg:absoluteerror',
@@ -77,11 +78,10 @@ SPACE_REGRESSION = {
     'colsample_bytree': hp.uniform('colsample_bytree', 0.1, 1),
     'gamma': hp.uniform('gamma', 0, 2),
     'lambda': hp.uniform('lambda', 0, 1),
-
-
     'reg_alpha': hp.uniform('reg_alpha', 0, 180),
     'reg_lambda': hp.uniform('reg_lambda', 0, 1),
     'seed': 42,
+    'monotone_constraints' : {}
 }
 
 
@@ -115,4 +115,4 @@ DEFAULT_REPORT_TABLE_OF_CONTENTS = [
         "Shapley Waterfall"
     ]
 
-FEATURES_TO_SKIP_PDP = ['CarMake', 'CarModel', 'vehicle_maker', 'vehicle_model', 'county', 'date_crawled']
+FEATURES_TO_SKIP_PDP = ['CarMake', 'CarModel', 'vehicle_maker', 'vehicle_model', 'county', 'date_crawled', 'vehicle_eurotax_code']

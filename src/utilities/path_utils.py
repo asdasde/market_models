@@ -18,7 +18,7 @@ class PathManager:
         return PROCESSED_DATA_PATH / self.service / f'{data_name}_processed.parquet'
 
     @staticmethod
-    def get_predictions_all_path(data_name: str, train_data_name : str, apply_presence_models : str) -> Path:
+    def get_predictions_all_path(data_name: str, train_data_name : str, apply_presence_models : bool) -> Path:
         if apply_presence_models:
             return PREDICTIONS_PATH / f'{data_name}_via_{train_data_name}_with_presence_models_all_predictions.parquet'
         else:
@@ -100,6 +100,9 @@ class PathManager:
         tables_name = column_to_folder_mapping.get(target_variable)
         comp_name = tables_name.replace('_tables', '')
         return self.get_external_path() / 'mtpl_postal_categories' / f'{comp_name}_factor_default_values_table.csv'
+
+    def get_brackets_path(self, feature: str) -> Path:
+        return self.get_external_path() / 'feature_brackets' / f'{feature}_brackets.json'
 
 
     def get_on_top_factor_file_path(self) -> Path:
@@ -196,9 +199,6 @@ class PathManager:
     def get_names_file_path(names_file_name : str) -> Path:
         return REFERENCES_PATH / f'{names_file_name}.txt'
 
-    @staticmethod
-    def get_brackets_path(feature: str) -> Path:
-        return BRACKETS_PATH / f'{feature}_brackets.json'
 
 
 

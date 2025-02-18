@@ -10,7 +10,13 @@ import pandas as pd
 from typing import Tuple, Dict, List
 
 from xgboost import Booster
+import sys
+import os
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+
+from utilities.model_utils import ModelConfig
 from utilities.path_utils import *
 from utilities.files_utils import read_data_frame
 
@@ -158,9 +164,13 @@ class LoadManager:
 
 
     def load_model_config(self, train_data_name : str, model_config_name : str):
+
+        if not model_config_name:
+            return ModelConfig.empty_config()
+
         model_config_path = self.path_manager.get_model_config_path(train_data_name, model_config_name)
-        with open(model_config_path, 'r') as file:
-            model_config = json.load(file)
+        model_config = ModelConfig.load_from_json(model_config_path)
+
         return model_config
 
     def check_model_existence(self, train_data_name : str, model_name : str):
@@ -220,6 +230,12 @@ class LoadManager:
             else:
                 others[other] = pd.read_table(other_file, header=None, usecols=[1])
         return others
+
+    def load_all_models_on_train_data(self, train_data_name, is_presence_model) -> dict[str, xgboost.Booster]:
+        models = {}
+        for model_name in self.path_manager.get_all_models_on_train_data(train_data_name, is_presence_model):
+            models[model_name] = self.load_model(train_data_name, model_name)
+        return models
 
 
 def reconstruct_categorical_variables(data : pd.DataFrame) -> pd.DataFrame:
