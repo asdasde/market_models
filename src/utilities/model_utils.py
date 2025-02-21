@@ -37,11 +37,13 @@ class ModelConfig(BaseModel):
                     warnings.warn(f"Feature {feature} that should be excluded by the config, already not present, please check if this is intended!")
             return result
         else:
-            for feature in self.features_to_include:
-                if feature not in features:
-                    raise Exception(f"Feature {feature} in feature_to_include not present!")
-            return self.features_to_include
-
+            if self.features_to_include:
+                for feature in self.features_to_include:
+                    if feature not in features:
+                        raise Exception(f"Feature {feature} in feature_to_include not present!")
+                return self.features_to_include
+            else:
+                return features # empty features to include
 
     @model_validator(mode="after")
     def check_features(cls, values: "ModelConfig") -> "ModelConfig":
