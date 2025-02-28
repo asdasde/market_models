@@ -16,6 +16,8 @@ from sklearn.metrics import (
     f1_score
 )
 
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, log_loss
+
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -222,11 +224,10 @@ def train_model_util(data: pd.DataFrame,
                      features: list,
                      target_variable: str,
                      is_classification: bool,
-                     model_config : ModelConfig,
-                     previous_trials : Trials = None,
+                     model_config: ModelConfig,
+                     previous_trials: Trials = None,
                      ):
-
-    train_data, validation_data = train_test_split(data, test_size = 0.1, random_state = 42)
+    train_data, validation_data = train_test_split(data, test_size=0.1, random_state=42)
 
     def objective(space):
         params = space.copy()
@@ -243,7 +244,7 @@ def train_model_util(data: pd.DataFrame,
         )
 
         if is_classification:
-            return {"loss" : metrics['log_loss'], 'status' : STATUS_OK}
+            return {"loss": metrics['log_loss'], 'status': STATUS_OK}
         else:
             return {"loss": metrics['mae'], 'status': STATUS_OK}
 
@@ -271,31 +272,65 @@ def train_model_util(data: pd.DataFrame,
     )
     best_hyperparams['monotone_constraints'] = model_config.monotone_constraints
 
-    model, predictions, eval_results = model_train(train_data, train_data, features, target_variable, is_classification, best_hyperparams)
+    model, predictions, eval_results = model_train(train_data, train_data, features, target_variable, is_classification,
+                                                   best_hyperparams)
     predictions = predict(model, validation_data[features])
     validation_data['preds_validation'] = predictions
 
     print("\n=== Validation Set Performance ===")
     print("Comparing actual vs predicted values:")
     print(validation_data[[target_variable, 'preds_validation']])
-    print(
-        f"\nValidation Set MAPE: {mean_absolute_percentage_error(validation_data[target_variable], predictions):.3f}%")
-    print(f"Validation Set MAE: {mean_absolute_error(validation_data[target_variable], predictions):.3f}")
+
+    # Show appropriate metrics for validation set based on classification or regression
+    if is_classification:
+        # For binary classification
+
+        # Threshold predictions to get binary values for confusion matrix
+        val_preds_binary = (predictions > 0.5).astype(int)
+        print(f"\nValidation Set Accuracy: {accuracy_score(validation_data[target_variable], val_preds_binary):.3f}")
+        print(f"Validation Set Log Loss: {log_loss(validation_data[target_variable], predictions):.3f}")
+        print("\nValidation Set Confusion Matrix:")
+        print(confusion_matrix(validation_data[target_variable], val_preds_binary))
+    else:
+        print(
+            f"\nValidation Set MAPE: {mean_absolute_percentage_error(validation_data[target_variable], predictions):.3f}%")
+        print(f"Validation Set MAE: {mean_absolute_error(validation_data[target_variable], predictions):.3f}")
+
     print("\nStarting k-Fold Cross Validation...")
     logging.info("Finished hyper-parameter tuning...")
 
     metrics, predictions = kFoldCrossValidation(k=4, data=data, features=features, target_variable=target_variable,
                                                 is_classification=is_classification, param=best_hyperparams, debug=True)
 
-    print(predictions)
     data['preds_out_of_sample'] = predictions
     data['preds_in_sample'] = predict(model, data[features])
 
     print(data[[target_variable, 'preds_out_of_sample', 'preds_in_sample']])
 
+    # Print performance metrics based on model type
+    if is_classification:
+        print("\nClassification Performance Metrics:")
+        # Create binary predictions from probabilities for confusion matrix
+        out_of_sample_binary = (data['preds_out_of_sample'] > 0.5).astype(int)
+        in_sample_binary = (data['preds_in_sample'] > 0.5).astype(int)
 
-    if not is_classification:
-        print("\nModel Performance Metrics:")
+        # Out-of-sample metrics
+        print("\n=== Out-of-Sample Classification Metrics ===")
+        print(f"Accuracy: {accuracy_score(data[target_variable], out_of_sample_binary):.3f}")
+        print(f"Log Loss: {log_loss(data[target_variable], data['preds_out_of_sample']):.3f}")
+        print("\nConfusion Matrix:")
+        print(confusion_matrix(data[target_variable], out_of_sample_binary))
+        print("\nClassification Report:")
+        print(classification_report(data[target_variable], out_of_sample_binary))
+
+        # In-sample metrics
+        print("\n=== In-Sample Classification Metrics ===")
+        print(f"Accuracy: {accuracy_score(data[target_variable], in_sample_binary):.3f}")
+        print(f"Log Loss: {log_loss(data[target_variable], data['preds_in_sample']):.3f}")
+        print("\nConfusion Matrix:")
+        print(confusion_matrix(data[target_variable], in_sample_binary))
+    else:
+        print("\nRegression Performance Metrics:")
         print(f"In-Sample MAPE: {mean_absolute_percentage_error(data[target_variable], data['preds_in_sample']):.3f}%")
         print(f"Out-of-Sample MAPE: {mean_absolute_percentage_error(data[target_variable], predictions):.3f}%")
         print(f"In-Sample MAE: {mean_absolute_error(data[target_variable], data['preds_in_sample']):.3f}")
@@ -304,8 +339,6 @@ def train_model_util(data: pd.DataFrame,
     metric_to_return = metrics['log_loss'] if is_classification else metrics['mae_percent']
 
     return model, best_hyperparams, predictions, trials, metric_to_return
-
-
 @click.command(name='train_model')
 @click.option('--service', required=True, type=click.STRING)
 @click.option('--data_name', required=True, type=click.STRING)
@@ -317,6 +350,8 @@ def train_model(service, data_name, target_variable, model_config_name):
     load_manager = LoadManager(path_manager)
     export_manager = ExportManager(path_manager)
 
+    logging.info(f"Starting model training process for {data_name} and {target_variable}...")
+
     model_name = path_manager.get_model_name(data_name, target_variable, model_config_name)
 
     data, features_info, features_on_top, features_model = load_manager.load_data(data_name, target_variable)
@@ -326,9 +361,11 @@ def train_model(service, data_name, target_variable, model_config_name):
 
     data = apply_on_top(data, target_variable, target_variable, on_top)
     data = apply_on_top(data, f'corrected_{target_variable}', target_variable, on_top, reverse=True)
+
+    logging.info("Finished apply on top transformations...")
+
+
     data['diff'] = data[f'{target_variable}_orig'] - data[f'corrected_corrected_{target_variable}']
-    print(data[[f'{target_variable}_orig', f'corrected_{target_variable}_orig', f'corrected_corrected_{target_variable}', 'diff']])
-    print(data[target_variable].isna().sum())
     trials = load_manager.find_best_previous_trials(data_name, model_name)
 
     features_model = model_config.process_features(features_model)
@@ -345,10 +382,10 @@ def train_model(service, data_name, target_variable, model_config_name):
     report_path = path_manager.get_report_path(data_name, target_variable, model_config_name)
     report_resources_path = path_manager.get_report_resource_path(report_path)
 
-    # make_report.generate_report_util(model, data, features_info, features_model, target_variable,
-    #                                  out_of_sample_predictions, trials, report_path,
-    #                                 report_resources_path, use_pdp=True, use_shap=False)
-    #
+    make_report.generate_report_util(model, data, features_info, features_model, target_variable,
+                                      out_of_sample_predictions, trials, report_path,
+                                     report_resources_path, use_pdp=True, use_shap=False)
+
     error_overview_path = path_manager.get_error_overview_path()
     error_overview.update_error_overview(round(percent_mMae, 2), data_name, target_variable, model_config.model_config_name, error_overview_path)
 
@@ -383,24 +420,51 @@ def evaluate_baseline_error_model(data: pd.DataFrame, features: list, target_var
 @click.option('--service', required=True, type=click.STRING)
 @click.option('--data_name', required=True, type=click.STRING)
 @click.option('--target_variable', required=True, type=click.STRING)
-def train_market_presence_model(service, data_name, target_variable):
-
+@click.option('--model_config_name', required=False, type=click.STRING)
+def train_market_presence_model(service, data_name, target_variable, model_config_name):
     path_manager = PathManager(service)
     load_manager = LoadManager(path_manager)
     export_manager = ExportManager(path_manager)
 
-    presence_model_name = path_manager.get_presence_model_name(data_name, target_variable)
+    logging.info(f"Starting presence model training process for {data_name} and {target_variable}...")
+
+    presence_model_name = path_manager.get_presence_model_name(data_name, target_variable, model_config_name)
+    print(presence_model_name)
+    print(path_manager.get_model_path(data_name, presence_model_name))
+
     presence_model_target_variable = f'{target_variable}_presence'
 
-    data, features_info, features_on_top, features_model = load_manager.load_data(data_name, target_variable, drop_target_na=False)
+    data, features_info, features_on_top, features_model = load_manager.load_data(data_name, target_variable,
+                                                                                  drop_target_na=False)
+    model_config = load_manager.load_model_config(data_name, model_config_name)
 
     data[presence_model_target_variable] = ~data[target_variable].isna()
 
-    presence_model, presence_model_hyperparameters, presence_model_out_of_sample_predictions, presence_model_trials, percent_m_mae = (
-        train_model_util(data, features_model, presence_model_target_variable,True, None))
+    features_model = model_config.process_features(features_model)
 
-    export_manager.export_model(presence_model, presence_model_hyperparameters, presence_model_out_of_sample_predictions,
-                 presence_model_trials, target_variable, presence_model_name)
+    trials = load_manager.find_best_previous_trials(data_name, presence_model_name)
+
+    presence_model, presence_model_hyperparameters, presence_model_out_of_sample_predictions, presence_model_trials, percent_m_mae = (
+        train_model_util(
+            data,
+            features_model,
+            presence_model_target_variable,
+            is_classification=True,
+            model_config=model_config,
+            previous_trials=trials
+        )
+    )
+
+    # Export model
+    export_manager.export_model(
+        presence_model,
+        presence_model_hyperparameters,
+        presence_model_out_of_sample_predictions,
+        presence_model_trials,
+        data_name,
+        presence_model_name
+    )
+
 
 
 @click.command(name='train_error_model')

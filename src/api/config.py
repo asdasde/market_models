@@ -87,7 +87,9 @@ class ApiConfig(BaseModel):
     train_data_name: str
     target_variables_and_model_config: Dict[str, Optional[str]]
     feature_columns: List[Dict[str, Any]]
-    model_kernels: Optional[List[tuple]] = None
+    tp_kernel: List[Dict[str, Any]] = None
+    tp_take_top_k : int 
+    rank1_undercut_factor : float
     input_processor: str
     additional_settings: Dict[str, Any] = Field(default_factory=dict)
     feature_validator: Optional[Type[BaseModel]] = None

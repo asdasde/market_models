@@ -99,19 +99,19 @@ CURRENT_YEAR = datetime.today().year
 QUANTILE_RANGE = [0, 0.01, 0.03, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.97, 0.99, 1]
 
 column_to_folder_mapping = {
-    'ALFA_price': 'aegon_tables',
+    'ALFA_price': 'alfa_tables',
     'ALLIANZ_price': 'allianz_tables',
     'GENERALI_price': 'generali_tables',
     'GENERTEL_price': 'genertel_tables',
     'GROUPAMA_price': 'groupama_tables',
     'K&AMP;H_price': 'kh_tables',
-    'KÖBE_price': 'aegon_tables',
+    'KÖBE_price': 'alfa_tables',
     'MAGYAR_price': 'magyar_tables',
     'SIGNAL_price': 'si_tables',
     'UNION_price': 'union_tables',
     'UNIQA_price': 'uniqa_tables',
-    'WÁBERER_price': 'waberer_tables',
-    'GRÁNIT_price': 'waberer_tables',
+    'WÁBERER_price': 'granit_tables',
+    'GRÁNIT_price': 'granit_tables',
 }
 
 PUNKTA_CATEGORICAL_COLUMNS = ['vehicle_maker', 'vehicle_fuel_type', 'voivodeship', 'county', 'owner_driver_same',

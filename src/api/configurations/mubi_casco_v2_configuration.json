@@ -1,39 +1,46 @@
 {
-    "config_name": "mubi_cheapest_offers",
+    "config_name": "mubi_casco",
     "service_name": "mubi",
     "train_data_name": "mubi_v23",
     "input_processor": "make_processed_mubi_data",
     "tp_kernel": [
         {
-            "target_variable" : "UNIQA-(OC),(NNW),(Assistance=75 km PL,After breakdown,Replacement vehicle)-price",
-            "cost_estimate" : 0.88,
-            "weight" : 0.75
+            "target_variable" : "UNIQA-(OC),(NNW),(Assistance=75 km PL,After breakdown,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%)-price",
+            "cost_estimate" : 0.93,
+            "weight" : 0.5
         },
         {
-            "target_variable" : "MTU24-(OC)-price",
+            "target_variable" : "TRASTI-(OC),(NNW),(Assistance=Do najbliższego warsztatu),(AC=Repair method:Kosztorys,Value decay:0%,Deductible:Szkody wypadkowe 0 zł &Kradzież 0 zł)-price",
+            "cost_estimate" : 0.89,
+            "weight" : 0.1
+        },
+        {
+            "target_variable" : "LINK4-(OC),(NNW),(Assistance=100 km PL,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%)-price",
             "cost_estimate" : 0.89,
             "weight" : 0.2
         },
         {
-            "target_variable" : "ALLIANZ-(OC)-price",
-            "cost_estimate" : 0.89,
-            "weight" : 0.05
+            "target_variable" : "ALLIANZ-(OC),(NNW),(Assistance=150 km EU,After breakdown,Replacement vehicle),(AC Mini=Repair method:Warsztat,Value decay:0%,Deductible:Żywioły 0 zł &Zderzenie ze zwierzęciem 0 zł)-price",
+            "cost_estimate" : 0.87,
+            "weight" : 0.2
         }
     ],
-    "rank1_undercut_factor" : 0.95,
+    "tp_take_top_k" : 3,
+    "rank1_undercut_factor" : 0.93,
+
     "target_variables_and_model_config": {
-        "BEESAFE-(OC)-price" : "monotonicity",
-        "TUZ-(OC),(NNW),(Assistance=100 km PL)-price" : "monotonicity",
-        "BENEFIA-(OC),(NNW),(Assistance=150 km EU,After breakdown)-price" : "monotonicity",
-        "BALCIA-(OC)-price" : "monotonicity",
-        "WEFOX-(OC),(Assistance=150 km PL)-price" : "monotonicity",
-        "ERGOHESTIA-(OC)-price" : "monotonicity",
-        "UNIQA-(OC),(NNW),(Assistance=75 km PL,After breakdown,Replacement vehicle)-price" : "monotonicity",
-        "TRASTI-(OC)-price" : "monotonicity",
-        "GENERALI-(OC)-price" : "monotonicity",
-        "MTU24-(OC)-price" : "monotonicity",
-        "PROAMA-(OC)-price" : "monotonicity",
-        "LINK4-(OC),(Assistance=100 km PL,Replacement vehicle)-price" : "monotonicity"
+        "ALLIANZ-(OC),(NNW),(Assistance=150 km EU,After breakdown,Replacement vehicle),(AC Mini=Repair method:Warsztat,Value decay:0%,Deductible:Żywioły 0 zł &Zderzenie ze zwierzęciem 0 zł)-price" : "ac_allianz",
+        "BALCIA-(OC),(NNW),(Assistance=100 km PL),(AC=Repair method:Kosztorys,Value decay:0%)-price" : "ac_balcia",
+        "TUZ-(OC),(NNW),(Assistance=100 km PL),(AC=Repair method:Kosztorys,Value decay:0%,Deductible:Szkody wypadkowe 0% &Kradzież 0%)-price" : "ac_tuz",
+        "ERGOHESTIA-(OC),(NNW),(Assistance=500 km PL &250 km EU,After breakdown,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%,Deductible:Szkody wypadkowe 0% &Kradzież 0%)-price" : "ac_ergohestia",
+        "TRASTI-(OC),(NNW),(Assistance=Do najbliższego warsztatu),(AC=Repair method:Kosztorys,Value decay:0%,Deductible:Szkody wypadkowe 0 zł &Kradzież 0 zł)-price" : "ac_trasti",
+        "LINK4-(OC),(NNW),(Assistance=100 km PL,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%)-price" : "ac_link4",
+        "BENEFIA-(OC),(NNW),(Assistance=150 km EU,After breakdown,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%,Deductible:Szkody wypadkowe 0% &Kradzież 0%)-price" : "ac_benefia",
+        "MTU24-(OC),(NNW),(Assistance=150 km PL,After breakdown),(AC=Repair method:Kosztorys,Value decay:0%)-price" : "ac_mtu24",
+        "WIENER-(OC),(NNW),(Assistance=150 km PL &75 km EU,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%)-price" : "ac_wiener",
+        "UNIQA-(OC),(NNW),(Assistance=75 km PL,After breakdown,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%)-price" : "ac_uniqa",
+        "GENERALI-(OC),(NNW),(Assistance=accident no limit &breakdown 100km,Replacement vehicle),(AC=Repair method:Workshop,Value decay:0%,Deductible:damge 0 zł &theft 0 zł)-price" : "ac_generali",
+        "BEESAFE-(OC),(NNW),(Assistance=200 km EU,After breakdown,Replacement vehicle),(AC=Repair method:Warsztat,Value decay:0%)-price" : "ac_beesafe"
     },
     "feature_columns": [
         {
