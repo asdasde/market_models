@@ -52,6 +52,8 @@ on_top = None
 
 InputFeatures = config.feature_validator
 
+
+
 def init_models():
     global real_data, models, on_top, data_name_reference, path_manager, load_manager
 
@@ -84,6 +86,7 @@ def process_input_data(datas) -> pd.DataFrame:
     return processed_data
 
 
+
 def prepare_categorical_data(processed_data: pd.DataFrame) -> pd.DataFrame:
     for col in processed_data.columns:
         if processed_data[col].dtype == 'category':
@@ -109,7 +112,7 @@ def predict_competitors(processed_data: pd.DataFrame) -> Dict:
 
 def calculate_technical_price(processed_data: pd.DataFrame) -> float:
     predictions = []
-    for tp_target_variable, cost_estimate, weight in config.model_kernels:
+    for tp_target_variable, cost_estimate, weight in config.tp_kernel:
         model = models[tp_target_variable]
         data_slice = processed_data[model.feature_names]
         predictions.append(predict_on_top(model, data_slice, on_top, tp_target_variable)[0] * cost_estimate * weight)
@@ -208,7 +211,7 @@ async def predict_optimal_price(data : InputFeatures, api_key: str = Depends(ver
 
         _, cheapest_price = find_cheapest_competitor(competitor_predictions)
 
-        suggested_price = cheapest_price * 0.95
+        suggested_price = cheapest_price * config.rank1_undercut_factor
 
         if technical_price < suggested_price:
             optimal_price = suggested_price

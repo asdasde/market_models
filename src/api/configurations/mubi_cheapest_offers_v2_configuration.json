@@ -6,8 +6,8 @@
     "tp_kernel": [
         {
             "target_variable" : "UNIQA-(OC),(NNW),(Assistance=75 km PL,After breakdown,Replacement vehicle)-price",
-            "cost_estimate" : 0.88,
-            "weight" : 0.75
+            "cost_estimate" : 0.93,
+            "weight" : 0.7
         },
         {
             "target_variable" : "MTU24-(OC)-price",
@@ -18,22 +18,30 @@
             "target_variable" : "ALLIANZ-(OC)-price",
             "cost_estimate" : 0.89,
             "weight" : 0.05
+        },
+        {
+            "target_variable" : "LINK4-(OC),(Assistance=100 km PL,Replacement vehicle)-price",
+            "cost_estimate" : 0.87,
+            "weight" : 0.05
         }
     ],
+    "tp_take_top_k" : 4,
     "rank1_undercut_factor" : 0.95,
+
     "target_variables_and_model_config": {
-        "BEESAFE-(OC)-price" : "monotonicity",
-        "TUZ-(OC),(NNW),(Assistance=100 km PL)-price" : "monotonicity",
-        "BENEFIA-(OC),(NNW),(Assistance=150 km EU,After breakdown)-price" : "monotonicity",
-        "BALCIA-(OC)-price" : "monotonicity",
-        "WEFOX-(OC),(Assistance=150 km PL)-price" : "monotonicity",
-        "ERGOHESTIA-(OC)-price" : "monotonicity",
+        "ALLIANZ-(OC)-price" : "remove_vehicle_value",
+        "BEESAFE-(OC)-price" : "remove_vehicle_value",
+        "TUZ-(OC),(NNW),(Assistance=100 km PL)-price" : "remove_vehicle_value",
+        "BENEFIA-(OC),(NNW),(Assistance=150 km EU,After breakdown)-price" : "remove_vehicle_value",
+        "BALCIA-(OC)-price" : "remove_vehicle_value",
+        "WEFOX-(OC),(Assistance=150 km PL)-price" : "remove_vehicle_value",
+        "ERGOHESTIA-(OC)-price" : "monotonicity_extra",
         "UNIQA-(OC),(NNW),(Assistance=75 km PL,After breakdown,Replacement vehicle)-price" : "monotonicity",
         "TRASTI-(OC)-price" : "monotonicity",
-        "GENERALI-(OC)-price" : "monotonicity",
-        "MTU24-(OC)-price" : "monotonicity",
-        "PROAMA-(OC)-price" : "monotonicity",
-        "LINK4-(OC),(Assistance=100 km PL,Replacement vehicle)-price" : "monotonicity"
+        "GENERALI-(OC)-price" : "monotonicity_extra",
+        "MTU24-(OC)-price" : "remove_vehicle_value",
+        "PROAMA-(OC)-price" : "monotonicity_extra",
+        "LINK4-(OC),(Assistance=100 km PL,Replacement vehicle)-price" : "monotonicity_extra"
     },
     "feature_columns": [
         {

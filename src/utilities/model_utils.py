@@ -9,8 +9,7 @@ from pydantic import BaseModel
 from typing import Optional
 import operator
 from pydantic import model_validator
-from sqlalchemy.testing.plugin.plugin_base import warnings
-
+import warnings
 
 class ModelType(Enum):
     MARKET_MODEL = '_market_model'
@@ -31,7 +30,7 @@ class ModelConfig(BaseModel):
 
         if self.features_to_exclude:
             for feature in self.features_to_exclude:
-                if feature in features:
+                if feature in result:
                     result.remove(feature)
                 else:
                     warnings.warn(f"Feature {feature} that should be excluded by the config, already not present, please check if this is intended!")
@@ -166,7 +165,8 @@ def apply_on_top(data: pd.DataFrame,
             unpacked = pd.concat([unpacked, group], axis=1)
 
 
-
+            print(unpacked)
+            print(data_c[features])
             if merge_type == 'range':
                 data_c = merge_range(data_c, unpacked, features[0])
             else:
@@ -181,6 +181,8 @@ def apply_on_top(data: pd.DataFrame,
             data_c[named_factor] = data_c[named_factor].fillna(1 if factor_type == 'relative' else 0)
 
             operation = operations[factor_type]
+            print(data_c[[corrected_target, named_factor]], operation)
+          #  print(data_c[[corrected_target]])
             data_c[corrected_target] = operation(data_c[corrected_target], data_c[named_factor])
 
     data = pd.merge(data, data_c[['temp_id', corrected_target]], on = 'temp_id')

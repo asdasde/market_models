@@ -43,8 +43,11 @@ class PathManager:
         return f'{data_name}_{target_variable}_error_model'
 
     @staticmethod
-    def get_presence_model_name(data_name: str, target_variable: str) -> str:
-        return f'{data_name}_{target_variable}_presence_model'
+    def get_presence_model_name(data_name: str, target_variable: str, model_config = None) -> str:
+        if model_config:
+            return f'{data_name}_{target_variable}_{model_config}_presence_model'
+        else:
+            return f'{data_name}_{target_variable}_presence_model'
 
     @staticmethod
     def get_presence_model_name_from_model_name(model_name : str) -> str:
@@ -72,16 +75,16 @@ class PathManager:
 
 
     def get_model_path(self, train_data_name : str, model_name: str) -> Path:
-        return self.get_model_directory(train_data_name, model_name) / f'{model_name}.json'
+        return self.get_model_directory(train_data_name, model_name) / f'{model_name[:100]}.json'
 
     def get_model_hyperparameters_path(self, train_data_name : str, model_name: str) -> Path:
-        return self.get_model_directory(train_data_name, model_name) / f'{model_name}_hyperparameters.json'
+        return self.get_model_directory(train_data_name, model_name) / f'{model_name[:100]}_hyperparameters.json'
 
     def get_model_cv_out_of_sample_predictions_path(self, train_data_name : str, model_name: str) -> Path:
-        return self.get_model_directory(train_data_name, model_name) / f'{model_name}_cv_out_of_sample_predictions.csv'
+        return self.get_model_directory(train_data_name, model_name) / f'{model_name[:100]}_cv_out_of_sample_predictions.csv'
 
     def get_model_trials_path(self, train_data_name : str, model_name: str) -> Path:
-        return self.get_model_directory(train_data_name, model_name) / f'{model_name}_hyperopt_trials.pkl'
+        return self.get_model_directory(train_data_name, model_name) / f'{model_name[:100]}_hyperopt_trials.pkl'
 
 
     def get_external_path(self):
