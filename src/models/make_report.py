@@ -636,48 +636,42 @@ def make_pdf(report_resources_path: Path, report_path: Path):
         images[0].save(pdf_file, "PDF", resolution=100.0, save_all=True, append_images=images[1:])
 
 
-def generate_report_cover_image(report_resources_path: Path, insurance_name: str, table_of_contents: list):
-    image_width, image_height = 800, 600
-    background_color = (255, 255, 255)
-    text_color = (0, 0, 0)
-    font_path = "arial.ttf"
-    title_font_size = 40
-    subtitle_font_size = 20
-    toc_font_size = 16
-
-    image = Image.new("RGB", (image_width, image_height), background_color)
-    draw = ImageDraw.Draw(image)
+def generate_report_cover_image(report_resources_path: Path, insurance_name: str, table_of_contents: list) -> Path:
+    img = Image.new('RGB', (1600, 1200), 'white')
+    draw = ImageDraw.Draw(img)
 
     try:
-        title_font = ImageFont.truetype(font_path, title_font_size)
-        subtitle_font = ImageFont.truetype(font_path, subtitle_font_size)
-        toc_font = ImageFont.truetype(font_path, toc_font_size)
+        title_font = ImageFont.truetype("arial.ttf", 192)  # Bigger title
+        subtitle_font = ImageFont.truetype("arial.ttf", 128)  # For date
+        toc_header_font = ImageFont.truetype("arial.ttf", 154)  # For TOC header
+        toc_font = ImageFont.truetype("arial.ttf", 100)  # For TOC items
     except IOError:
-        title_font = ImageFont.load_default()
-        subtitle_font = ImageFont.load_default()
-        toc_font = ImageFont.load_default()
+        title_font = subtitle_font = toc_header_font = toc_font = ImageFont.load_default()
 
-    current_y = 50
-    report_date = datetime.now().strftime("%Y-%m-%d")
-    title_text = f"Report for {insurance_name}"
-    subtitle_text = f"Date: {report_date}"
-    title_bbox = draw.textbbox((0, 0), title_text, font=title_font)
-    title_width = title_bbox[2] - title_bbox[0]
-    draw.text((image_width // 2 - title_width // 2, current_y), title_text, fill=text_color, font=title_font)
-    current_y += 60
-    subtitle_bbox = draw.textbbox((0, 0), subtitle_text, font=subtitle_font)
-    subtitle_width = subtitle_bbox[2] - subtitle_bbox[0]
-    draw.text((image_width // 2 - subtitle_width // 2, current_y), subtitle_text, fill=text_color, font=subtitle_font)
-    current_y += 40
-    draw.text((50, current_y), "Table of Contents:", fill=text_color, font=subtitle_font)
-    current_y += 40
+    def draw_centered_text(y, text, font):
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        draw.text(((1600 - text_width) // 2, y), text, font=font, fill='black')
+        return y + text_height + 40  # Increased spacing between elements
+
+    y_pos = 100  # Start lower from the top
+    y_pos = draw_centered_text(y_pos, f"Report for {insurance_name}", title_font)
+    y_pos = draw_centered_text(y_pos, f"Date: {datetime.now().strftime('%Y-%m-%d')}", subtitle_font)
+
+    y_pos += 60  # More space before TOC
+    draw.text((100, y_pos), "Table of Contents:", font=toc_header_font, fill='black')
+    y_pos += 80  # More space after TOC header
+
     for item in table_of_contents:
-        draw.text((70, current_y), f"- {item}", fill=text_color, font=toc_font)
-        current_y += 30
+        draw.text((150, y_pos), f"• {item}", font=toc_font, fill='black')
+        y_pos += 60  # More space between TOC items
 
     output_path = report_resources_path / "00_report_cover_image.jpg"
-    image.save(output_path)
+    img.save(output_path, "JPEG", quality=95)  # Higher quality output
     return output_path
+
+
 
 
 def generate_report_util(

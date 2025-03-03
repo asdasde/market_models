@@ -323,7 +323,6 @@ def train_model_util(data: pd.DataFrame,
         print("\nClassification Report:")
         print(classification_report(data[target_variable], out_of_sample_binary))
 
-        # In-sample metrics
         print("\n=== In-Sample Classification Metrics ===")
         print(f"Accuracy: {accuracy_score(data[target_variable], in_sample_binary):.3f}")
         print(f"Log Loss: {log_loss(data[target_variable], data['preds_in_sample']):.3f}")
