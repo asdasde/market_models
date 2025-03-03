@@ -1,46 +1,98 @@
 {
-    "config_name": "mubi_casco",
+    "config_name": "poland",
     "service_name": "mubi",
-    "train_data_name": "mubi_v23",
     "input_processor": "make_processed_mubi_data",
-    "tp_kernel": [
-        {
-            "target_variable" : "UNIQA-(OC),(NNW),(Assistance=75 km PL,After breakdown,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%)-price",
-            "cost_estimate" : 0.93,
-            "weight" : 0.5
+    "train_data_name" : "mubi_v23",
+    "pricing_config" : {
+        "OMINIMO-(OC)-price" : {
+            "target_variables_and_model_config": {
+                "ALLIANZ-(OC)-price": "remove_vehicle_value",
+                "BEESAFE-(OC)-price": "remove_vehicle_value",
+                "TUZ-(OC),(NNW),(Assistance=100 km PL)-price": "remove_vehicle_value",
+                "BENEFIA-(OC),(NNW),(Assistance=150 km EU,After breakdown)-price": "remove_vehicle_value",
+                "BALCIA-(OC)-price": "remove_vehicle_value",
+                "WEFOX-(OC),(Assistance=150 km PL)-price": "remove_vehicle_value",
+                "ERGOHESTIA-(OC)-price": "monotonicity_extra",
+                "UNIQA-(OC),(NNW),(Assistance=75 km PL,After breakdown,Replacement vehicle)-price": "monotonicity",
+                "TRASTI-(OC)-price": "monotonicity",
+                "GENERALI-(OC)-price": "monotonicity_extra",
+                "MTU24-(OC)-price": "remove_vehicle_value",
+                "PROAMA-(OC)-price": "monotonicity_extra",
+                "LINK4-(OC),(Assistance=100 km PL,Replacement vehicle)-price": "monotonicity_extra"
+            },
+            "rank1_undercut_factor": 0.93,
+            "tp_kernel": [
+                {
+                    "target_variable": "UNIQA-(OC),(NNW),(Assistance=75 km PL,After breakdown,Replacement vehicle)-price",
+                    "cost_estimate": 0.93,
+                    "weight": 0.76
+                },
+                {
+                    "target_variable": "MTU24-(OC)-price",
+                    "cost_estimate": 0.89,
+                    "weight": 0.16
+                },
+                {
+                    "target_variable": "ALLIANZ-(OC)-price",
+                    "cost_estimate": 0.89,
+                    "weight": 0.04
+                },
+                {
+                    "target_variable": "LINK4-(OC),(Assistance=100 km PL,Replacement vehicle)-price",
+                    "cost_estimate": 0.87,
+                    "weight": 0.04
+                }
+            ],
+            "tp_take_top_k": 3,
+            "tp_nan_threshold" : 3,
+            "tp_global_adjustment" : 1.0,
+            "tp_adjustment_function" : "calc_tp_adjustments_poland",
+            "package_name" : "OMINIMO-(OC)-price"
         },
-        {
-            "target_variable" : "TRASTI-(OC),(NNW),(Assistance=Do najbliższego warsztatu),(AC=Repair method:Kosztorys,Value decay:0%,Deductible:Szkody wypadkowe 0 zł &Kradzież 0 zł)-price",
-            "cost_estimate" : 0.89,
-            "weight" : 0.1
-        },
-        {
-            "target_variable" : "LINK4-(OC),(NNW),(Assistance=100 km PL,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%)-price",
-            "cost_estimate" : 0.89,
-            "weight" : 0.2
-        },
-        {
-            "target_variable" : "ALLIANZ-(OC),(NNW),(Assistance=150 km EU,After breakdown,Replacement vehicle),(AC Mini=Repair method:Warsztat,Value decay:0%,Deductible:Żywioły 0 zł &Zderzenie ze zwierzęciem 0 zł)-price",
-            "cost_estimate" : 0.87,
-            "weight" : 0.2
+        "OMINIMO-(OC)(Assistance)(NNW)(AC)-price" : {
+            "target_variables_and_model_config": {
+                "ALLIANZ-(OC),(NNW),(Assistance=150 km EU,After breakdown,Replacement vehicle),(AC Mini=Repair method:Warsztat,Value decay:0%,Deductible:Żywioły 0 zł &Zderzenie ze zwierzęciem 0 zł)-price": "ac_allianz",
+                "BALCIA-(OC),(NNW),(Assistance=100 km PL),(AC=Repair method:Kosztorys,Value decay:0%)-price": "ac_balcia",
+                "TUZ-(OC),(NNW),(Assistance=100 km PL),(AC=Repair method:Kosztorys,Value decay:0%,Deductible:Szkody wypadkowe 0% &Kradzież 0%)-price": "ac_tuz",
+                "ERGOHESTIA-(OC),(NNW),(Assistance=500 km PL &250 km EU,After breakdown,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%,Deductible:Szkody wypadkowe 0% &Kradzież 0%)-price": "ac_ergohestia",
+                "TRASTI-(OC),(NNW),(Assistance=Do najbliższego warsztatu),(AC=Repair method:Kosztorys,Value decay:0%,Deductible:Szkody wypadkowe 0 zł &Kradzież 0 zł)-price": "ac_trasti",
+                "LINK4-(OC),(NNW),(Assistance=100 km PL,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%)-price": "ac_link4",
+                "BENEFIA-(OC),(NNW),(Assistance=150 km EU,After breakdown,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%,Deductible:Szkody wypadkowe 0% &Kradzież 0%)-price": "ac_benefia",
+                "MTU24-(OC),(NNW),(Assistance=150 km PL,After breakdown),(AC=Repair method:Kosztorys,Value decay:0%)-price": "ac_mtu24",
+                "WIENER-(OC),(NNW),(Assistance=150 km PL &75 km EU,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%)-price": "ac_wiener",
+                "UNIQA-(OC),(NNW),(Assistance=75 km PL,After breakdown,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%)-price": "ac_uniqa",
+                "GENERALI-(OC),(NNW),(Assistance=accident no limit &breakdown 100km,Replacement vehicle),(AC=Repair method:Workshop,Value decay:0%,Deductible:damge 0 zł &theft 0 zł)-price": "ac_generali",
+                "BEESAFE-(OC),(NNW),(Assistance=200 km EU,After breakdown,Replacement vehicle),(AC=Repair method:Warsztat,Value decay:0%)-price": "ac_beesafe"
+            },
+            "rank1_undercut_factor": 0.93,
+            "tp_kernel": [
+                {
+                    "target_variable": "UNIQA-(OC),(NNW),(Assistance=75 km PL,After breakdown,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%)-price",
+                    "cost_estimate": 0.93,
+                    "weight": 0.82
+                },
+                {
+                    "target_variable": "TRASTI-(OC),(NNW),(Assistance=Do najbliższego warsztatu),(AC=Repair method:Kosztorys,Value decay:0%,Deductible:Szkody wypadkowe 0 zł &Kradzież 0 zł)-price",
+                    "cost_estimate": 0.89,
+                    "weight": 0.036
+                },
+                {
+                    "target_variable": "LINK4-(OC),(NNW),(Assistance=100 km PL,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%)-price",
+                    "cost_estimate": 0.89,
+                    "weight": 0.072
+                },
+                {
+                    "target_variable": "ALLIANZ-(OC),(NNW),(Assistance=150 km EU,After breakdown,Replacement vehicle),(AC Mini=Repair method:Warsztat,Value decay:0%,Deductible:Żywioły 0 zł &Zderzenie ze zwierzęciem 0 zł)-price",
+                    "cost_estimate": 0.87,
+                    "weight": 0.072
+                }
+            ],
+            "tp_take_top_k": 3,
+            "tp_nan_threshold" : 3,
+            "tp_global_adjustment" : 1.0,
+            "tp_adjustment_function" : "calc_tp_adjustments_poland",
+            "package_name" : "OMINIMO-(OC)(Assistance)(NNW)(AC)-price"
         }
-    ],
-    "tp_take_top_k" : 3,
-    "rank1_undercut_factor" : 0.93,
-
-    "target_variables_and_model_config": {
-        "ALLIANZ-(OC),(NNW),(Assistance=150 km EU,After breakdown,Replacement vehicle),(AC Mini=Repair method:Warsztat,Value decay:0%,Deductible:Żywioły 0 zł &Zderzenie ze zwierzęciem 0 zł)-price" : "ac_allianz",
-        "BALCIA-(OC),(NNW),(Assistance=100 km PL),(AC=Repair method:Kosztorys,Value decay:0%)-price" : "ac_balcia",
-        "TUZ-(OC),(NNW),(Assistance=100 km PL),(AC=Repair method:Kosztorys,Value decay:0%,Deductible:Szkody wypadkowe 0% &Kradzież 0%)-price" : "ac_tuz",
-        "ERGOHESTIA-(OC),(NNW),(Assistance=500 km PL &250 km EU,After breakdown,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%,Deductible:Szkody wypadkowe 0% &Kradzież 0%)-price" : "ac_ergohestia",
-        "TRASTI-(OC),(NNW),(Assistance=Do najbliższego warsztatu),(AC=Repair method:Kosztorys,Value decay:0%,Deductible:Szkody wypadkowe 0 zł &Kradzież 0 zł)-price" : "ac_trasti",
-        "LINK4-(OC),(NNW),(Assistance=100 km PL,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%)-price" : "ac_link4",
-        "BENEFIA-(OC),(NNW),(Assistance=150 km EU,After breakdown,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%,Deductible:Szkody wypadkowe 0% &Kradzież 0%)-price" : "ac_benefia",
-        "MTU24-(OC),(NNW),(Assistance=150 km PL,After breakdown),(AC=Repair method:Kosztorys,Value decay:0%)-price" : "ac_mtu24",
-        "WIENER-(OC),(NNW),(Assistance=150 km PL &75 km EU,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%)-price" : "ac_wiener",
-        "UNIQA-(OC),(NNW),(Assistance=75 km PL,After breakdown,Replacement vehicle),(AC=Repair method:Kosztorys,Value decay:0%)-price" : "ac_uniqa",
-        "GENERALI-(OC),(NNW),(Assistance=accident no limit &breakdown 100km,Replacement vehicle),(AC=Repair method:Workshop,Value decay:0%,Deductible:damge 0 zł &theft 0 zł)-price" : "ac_generali",
-        "BEESAFE-(OC),(NNW),(Assistance=200 km EU,After breakdown,Replacement vehicle),(AC=Repair method:Warsztat,Value decay:0%)-price" : "ac_beesafe"
     },
     "feature_columns": [
         {
@@ -354,6 +406,7 @@
                             "normal",
                             "commercial",
                             "ride_sharing",
+                            "solo_trader",
                             "other"
                         ]
                     },
@@ -364,6 +417,11 @@
         },
         {
             "name": "vehicle_imported",
+            "type": "bool",
+            "validation": []
+        },
+        {
+            "name": "vehicle_imported_within_last_12_months",
             "type": "bool",
             "validation": []
         },
@@ -447,7 +505,8 @@
                             "single",
                             "married",
                             "divorced",
-                            "widowed"
+                            "widowed",
+                            "other"
                         ]
                     },
                     "error_message": "Invalid marital status"

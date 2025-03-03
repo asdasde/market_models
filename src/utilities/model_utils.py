@@ -165,8 +165,6 @@ def apply_on_top(data: pd.DataFrame,
             unpacked = pd.concat([unpacked, group], axis=1)
 
 
-            print(unpacked)
-            print(data_c[features])
             if merge_type == 'range':
                 data_c = merge_range(data_c, unpacked, features[0])
             else:
@@ -181,8 +179,6 @@ def apply_on_top(data: pd.DataFrame,
             data_c[named_factor] = data_c[named_factor].fillna(1 if factor_type == 'relative' else 0)
 
             operation = operations[factor_type]
-            print(data_c[[corrected_target, named_factor]], operation)
-          #  print(data_c[[corrected_target]])
             data_c[corrected_target] = operation(data_c[corrected_target], data_c[named_factor])
 
     data = pd.merge(data, data_c[['temp_id', corrected_target]], on = 'temp_id')
@@ -201,7 +197,8 @@ def predict_on_top(
         model : xgboost.Booster,
         data : pd.DataFrame,
         on_top : pd.DataFrame,
-        target_variable_orig : str) -> np.ndarray:
+        target_variable_orig : str
+    ) -> np.ndarray:
 
     data_c = data.copy()
     data_c['predictions'] = predict(model, data)
@@ -209,3 +206,19 @@ def predict_on_top(
     return data['corrected_predictions'].values
 
 
+def predict_multiple_models(
+        data : pd.DataFrame,
+        models : Dict[str, xgboost.Booster],
+        on_top : pd.DataFrame,
+        inplace : bool = True
+    ) -> pd.DataFrame:
+
+    if inplace:
+        for target_variable, model in models.items():
+            data[target_variable + "_model_prediction"] = predict_on_top(model, data[model.feature_names], on_top, target_variable)
+        return data
+    else:
+        predictions = {}
+        for target_variable, model in models.items():
+            predictions[target_variable + "model_prediction"] = predict_on_top(model, data[model.feature_names], on_top, target_variable)
+        return pd.DataFrame(predictions, index = data.index)

@@ -597,7 +597,6 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
 
     MUBI_CATEGORICAL = ['vehicle_maker', 'vehicle_fuel_type', 'vehicle_model',
                         'vehicle_parking_place', 'vehicle_usage', 'vehicle_first_registration_country',
-                        'vehicle_planned_annual_mileage',
                         'contractor_marital_status',
                         'voivodeship', 'county']
 
@@ -632,6 +631,7 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
        'vehicle_age',
        'vehicle_steering_wheel_right',
        'vehicle_imported', 'vehicle_imported_within_last_12_months',
+        'vehicle_planned_annual_mileage',
        # CONTRACTOR INFO
        'contractor_age', 'licence_at_age', 'driver_experience',
        'latitude', 'longitude',
@@ -645,7 +645,9 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
        'GENERALI_pesel_ab_test'
     ] + MUBI_VEHICLE_VALUE_FEATURES + MUBI_CATEGORICAL
 
-    MUBI_NULLABLE_INT = ['additional_driver_under_26_license_obtained_year', 'contractor_mtpl_years_since_last_damage_caused']
+    MUBI_NULLABLE_INT = ['additional_driver_under_26_license_obtained_year',
+                         'contractor_mtpl_years_since_last_damage_caused',
+                         'contractor_mtpl_policy_years']
     MUBI_NULLABLE_FLOAT = MUBI_VEHICLE_VALUE_FEATURES
 
     processed_datas = []
@@ -669,8 +671,6 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
         data['crawling_date'] = '2000.01.01'
 
     data = data.dropna(subset=['contractor_birth_date'])
-
-    print(data.filter(like = 'vehicle_value').columns)
 
     others = load_manager.load_other()
     geo_data_columns = ['postal_code', 'latitude', 'longitude', 'voivodeship', 'county', 'postal_code_population',
@@ -714,10 +714,6 @@ def make_processed_mubi_data(datas : List[pd.DataFrame], data_name_reference : d
     data['vehicle_weight_to_power_ratio'] = data['vehicle_gross_weight'] / data['vehicle_power']
 
     data['contractor_mtpl_policy_years'] = CURRENT_YEAR - data['mtpl_first_purchase_year']
-
-
-    print(data.filter(like = 'vehicle_value').columns)
-
 
     def get_last_damage(row):
         num_claims = row['contractor_mtpl_number_of_claims']
