@@ -383,7 +383,7 @@ def train_model(service, data_name, target_variable, model_config_name):
 
     make_report.generate_report_util(model, data, features_info, features_model, target_variable,
                                       out_of_sample_predictions, trials, report_path,
-                                     report_resources_path, use_pdp=True, use_shap=False)
+                                     report_resources_path, is_classification=False, use_pdp=True, use_shap=True)
 
     error_overview_path = path_manager.get_error_overview_path()
     error_overview.update_error_overview(round(percent_mMae, 2), data_name, target_variable, model_config.model_config_name, error_overview_path)
@@ -464,6 +464,13 @@ def train_market_presence_model(service, data_name, target_variable, model_confi
         presence_model_name
     )
 
+    report_path = path_manager.get_report_path(data_name, presence_model_target_variable, model_config_name)
+    report_resources_path = path_manager.get_report_resource_path(report_path)
+
+    make_report.generate_report_util(presence_model, data, features_info, features_model, presence_model_target_variable,
+                                     presence_model_out_of_sample_predictions, presence_model_trials, report_path,
+                                     report_resources_path, is_classification=True, use_pdp=True, use_shap=True)
+
 
 
 @click.command(name='train_error_model')
@@ -506,6 +513,14 @@ def train_error_model(service, data_name, target_variable, use_pretrained_model)
     error_model, error_model_hyperparameters, error_model_out_of_sample_predictions, error_model_trials, _ = train_model_util(data, features_model, error_model_target_variable, True, None)
 
     export_manager.export_model(error_model, error_model_hyperparameters, error_model_out_of_sample_predictions, error_model_trials, error_model_name)
+
+    report_path = path_manager.get_report_path(data_name, error_model_target_variable, None)
+    report_resources_path = path_manager.get_report_resource_path(report_path)
+
+    make_report.generate_report_util(error_model, data, features_info, features_model,
+                                     error_model_target_variable,
+                                     error_model_out_of_sample_predictions, error_model_trials, report_path,
+                                     report_resources_path, is_classification=True, use_pdp=True, use_shap=True)
 
 
 

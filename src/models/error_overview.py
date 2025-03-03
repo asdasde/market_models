@@ -4,6 +4,9 @@ from openpyxl.utils import get_column_letter
 
 
 def update_error_overview(mae, data_name, target_variable, model_config, error_overview_path):
+    # Create the error overview directory if it does not exist.
+    os.makedirs(os.path.dirname(error_overview_path), exist_ok=True)
+
     version = data_name.split('_')[-1]
 
     if not os.path.exists(error_overview_path):

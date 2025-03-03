@@ -12,12 +12,18 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from pandas import CategoricalDtype
 import shap
-from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error, mean_absolute_error
+from sklearn.metrics import (
+    confusion_matrix, accuracy_score, precision_score, recall_score, log_loss, roc_curve, auc,
+    f1_score, mean_absolute_error, mean_squared_error, mean_absolute_percentage_error
+)
+
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utilities.constants import QUANTILE_RANGE
-from utilities.model_constants import DEFAULT_REPORT_TABLE_OF_CONTENTS, FEATURES_TO_SKIP_PDP
+from utilities.model_constants import (
+    DEFAULT_REPORT_TABLE_OF_CONTENTS, CLASSIFICATION_REPORT_TABLE_OF_CONTENTS, FEATURES_TO_SKIP_PDP
+)
 from utilities.model_utils import *
 from utilities.files_utils import *
 from utilities.load_utils import *
@@ -115,6 +121,85 @@ def make_error_overview(actual: pd.Series, predicted: pd.Series, report_resource
     plt.savefig(output_path, bbox_inches='tight', dpi=200)
     plt.close()
 
+
+def make_classification_metrics_overview(actual: pd.Series, predicted: pd.Series, report_resources_path: Path,
+                                         idx: int) -> None:
+    binary_preds = (predicted > 0.5).astype(int)
+
+    accuracy = accuracy_score(actual, binary_preds)
+    f1 = f1_score(actual, binary_preds)
+    precision = precision_score(actual, binary_preds)
+    recall = recall_score(actual, binary_preds)
+    log_loss_val = log_loss(actual, predicted)
+
+    report = pd.DataFrame({
+        'Metric': ['Accuracy', 'F1 Score', 'Precision', 'Recall', 'Log Loss'],
+        'Value': [accuracy, f1, precision, recall, log_loss_val]
+    })
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.axis('off')
+    table = ax.table(cellText=report.values, colLabels=report.columns,
+                     cellLoc='center', loc='center')
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.auto_set_column_width(col=list(range(len(report.columns))))
+
+    output_path = report_resources_path / f"{idx:02d}_classification_metrics.jpg"
+    plt.savefig(output_path, bbox_inches='tight', dpi=200)
+    plt.close()
+
+
+def plot_confusion_matrix(actual: pd.Series, binary_preds: pd.Series, report_resources_path: Path, idx: int) -> None:
+    cm = confusion_matrix(actual, binary_preds)
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                xticklabels=['Negative', 'Positive'],
+                yticklabels=['Negative', 'Positive'])
+    plt.xlabel('Predicted')
+    plt.ylabel('Actual')
+    plt.title('Confusion Matrix')
+
+    output_path = report_resources_path / f"{idx:02d}_confusion_matrix.jpg"
+    plt.savefig(output_path, bbox_inches='tight', dpi=200)
+    plt.close()
+
+
+def plot_roc_curve(actual: pd.Series, predicted: pd.Series, report_resources_path: Path, idx: int) -> None:
+    fpr, tpr, thresholds = roc_curve(actual, predicted)
+    roc_auc = auc(fpr, tpr)
+
+    plt.figure(figsize=(8, 6))
+    plt.plot(fpr, tpr, color='blue', lw=2, label=f'ROC curve (AUC = {roc_auc:.4f})')
+    plt.plot([0, 1], [0, 1], color='gray', linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver Operating Characteristic (ROC) Curve')
+    plt.legend(loc="lower right")
+
+    output_path = report_resources_path / f"{idx:02d}_roc_curve.jpg"
+    plt.savefig(output_path, bbox_inches='tight', dpi=200)
+    plt.close()
+
+
+def plot_probability_distribution(predicted: pd.Series, actual: pd.Series, report_resources_path: Path,
+                                  idx: int) -> None:
+    plt.figure(figsize=(10, 6))
+
+    sns.histplot(predicted[actual == 0], bins=20, alpha=0.5, label='Actual: Negative', stat='density')
+    sns.histplot(predicted[actual == 1], bins=20, alpha=0.5, label='Actual: Positive', stat='density')
+
+    plt.xlabel('Predicted Probability')
+    plt.ylabel('Density')
+    plt.title('Distribution of Predicted Probabilities by Class')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+
+    output_path = report_resources_path / f"{idx:02d}_probability_distribution.jpg"
+    plt.savefig(output_path, bbox_inches='tight', dpi=200)
+    plt.close()
 
 def plot_hist_error_percentage(error: np.array, report_resources_path: Path, idx : int) -> None:
     delta = max(abs(error.quantile(0.1)), error.quantile(0.9))
@@ -684,30 +769,41 @@ def generate_report_util(
         trials: Trials,
         report_path: Path,
         report_resources_path: Path,
+        is_classification: bool = False,
         use_pdp: bool = False,
         use_shap: bool = False,
-
 ):
     data = reconstruct_categorical_variables(data)
+    print(data.columns)
     features_all = features_info + features_model
-    all_info  = features_all + [f'{target_variable}_orig',
-                                f'corrected_{target_variable}_orig',
-                                f'corrected_corrected_{target_variable}',
-                                'diff', target_variable]
+
+    if not is_classification:
+        all_info = features_all + [f'{target_variable}_orig',
+                                    f'corrected_{target_variable}_orig',
+                                    f'corrected_corrected_{target_variable}',
+                                    'diff', target_variable]
+    else:
+        all_info = features_all + [target_variable]
 
     if target_variable.startswith('log_'):
         data[target_variable] = np.exp(data[target_variable])
 
     real = data[target_variable]
+
     errors = real - out_of_sample_predictions
-    errors_percentage = errors / data[target_variable] * 100
+    if not is_classification:
+        errors_percentage = errors / real * 100
+    else:
+        binary_preds = (out_of_sample_predictions > 0.5).astype(int)
+
+    if is_classification:
+        table_of_contents = CLASSIFICATION_REPORT_TABLE_OF_CONTENTS
+    else:
+        table_of_contents = DEFAULT_REPORT_TABLE_OF_CONTENTS
 
     logging.info("Preparing directories for the report.")
     prepare_dir(report_path)
     prepare_dir(report_resources_path)
-
-
-    table_of_contents = DEFAULT_REPORT_TABLE_OF_CONTENTS
 
     logging.info("Generating report cover image.")
     generate_report_cover_image(report_resources_path, target_variable, table_of_contents)
@@ -722,35 +818,57 @@ def generate_report_util(
         shap_values.feature_names = features_model
 
     section_functions = {
+        # Common visualizations for both model types
         "Data Overview": lambda idx: make_data_overview(data, all_info, report_resources_path, idx),
-        "Error Overview": lambda idx: make_error_overview(real, out_of_sample_predictions, report_resources_path, idx),
-        "Error Quantiles": lambda idx: make_error_quantiles(real, out_of_sample_predictions, report_resources_path,
-                                                            None, idx),
-        "Error Percentage Distribution": lambda idx: plot_hist_error_percentage(errors_percentage,
-                                                                                report_resources_path, idx),
-        "Top k Largest Errors": lambda idx: get_k_largest_errors(data, all_info, out_of_sample_predictions, errors, 10
-                                                                 , report_resources_path, idx),
-        "Feature Importance": lambda idx: plot_feature_importance(model, importance,
-                                                                  report_resources_path, idx),
-        "Feature Distribution": lambda idx: [plot_feature_distribution(data[feature], report_resources_path, idx) for
-                                             feature in features_all],
-        "Partial Dependence Plots": lambda idx: plot_pdps(features_model, pdp_dict, report_resources_path,
-                                                          idx) if use_pdp else None,
-        "Real vs Predicted Quantiles": lambda idx: plot_real_vs_predicted_quantiles(real, out_of_sample_predictions,
-                                                                                    report_resources_path, idx),
-        "Real vs Predicted Quantiles by Feature": lambda idx: [
-            plot_real_vs_predicted_by_feature(data, out_of_sample_predictions, feature, target_variable,
-                                              report_resources_path, idx) for feature in features_all + [target_variable]],
+        "Top k Largest Errors": lambda idx: get_k_largest_errors(data, all_info, out_of_sample_predictions, errors, 10,
+                                                                    report_resources_path, idx),
+        "Feature Importance": lambda idx: plot_feature_importance(model, importance, report_resources_path, idx),
+        "Feature Distribution": lambda idx: [plot_feature_distribution(data[feature], report_resources_path, idx)
+                                             for feature in features_all],
+        "Partial Dependence Plots": lambda idx: plot_pdps(features_model, pdp_dict, report_resources_path, idx)
+        if use_pdp else None,
         "Learning Curve": lambda idx: plot_learning_curve(trials, report_resources_path, idx),
         "Shapley Summary": lambda idx: plot_shap_summary(shap_values, data, features_model, report_resources_path, idx)
-                                        if use_shap else None,
-        "Shapley Waterfall": lambda idx : plot_shap_waterfall(shap_values, report_resources_path, idx, k = 3) if use_shap else None,
+        if use_shap else None,
+        "Shapley Waterfall": lambda idx: plot_shap_waterfall(shap_values, report_resources_path, idx, k=3)
+        if use_shap else None,
+
+        # Regression-specific visualizations
+        "Error Overview": lambda idx: make_error_overview(real, out_of_sample_predictions, report_resources_path, idx),
+        "Error Quantiles": lambda idx: make_error_quantiles(real, out_of_sample_predictions, report_resources_path,
+                                                            None, idx)
+        if not is_classification else None,
+        "Error Percentage Distribution": lambda idx: plot_hist_error_percentage(errors_percentage,
+                                                                                report_resources_path, idx)
+        if not is_classification else None,
+        "Real vs Predicted Quantiles": lambda idx: plot_real_vs_predicted_quantiles(real, out_of_sample_predictions,
+                                                                                    report_resources_path, idx)
+        if not is_classification else None,
+        "Real vs Predicted Quantiles by Feature": lambda idx: [
+            plot_real_vs_predicted_by_feature(data, out_of_sample_predictions, feature,
+                                              target_variable, report_resources_path, idx)
+            for feature in features_all + [target_variable]]
+        if not is_classification else None,
+
+        # Classification-specific visualizations
+        "Classification Metrics": lambda idx: make_classification_metrics_overview(real, out_of_sample_predictions,
+                                                                                   report_resources_path, idx)
+        if is_classification else None,
+        "Confusion Matrix": lambda idx: plot_confusion_matrix(real, binary_preds, report_resources_path, idx)
+        if is_classification else None,
+        "ROC Curve": lambda idx: plot_roc_curve(real, out_of_sample_predictions, report_resources_path, idx)
+        if is_classification else None,
+        "Probability Distribution": lambda idx: plot_probability_distribution(out_of_sample_predictions, real,
+                                                                              report_resources_path, idx)
+        if is_classification else None,
     }
 
     for section_id, section in enumerate(table_of_contents, start=1):
         logging.info(f"Generating section: {section}")
         if section in section_functions:
-            section_functions[section](section_id)
+            section_function = section_functions[section]
+            if section_function:
+                section_function(section_id)
 
     logging.info("Generating PDF report.")
     make_pdf(report_resources_path, report_path / "report.pdf")
@@ -761,9 +879,10 @@ def generate_report_util(
 @click.option("--data_name", required=True, type=click.STRING)
 @click.option("--target_variable", required=True, type=click.STRING)
 @click.option("--model_config_name", required=True, type=click.STRING)
+@click.option("--is_classification", default=False, is_flag=True)
 @click.option('--use_pdp', default=False, is_flag=True, help='Useful when testing, since pdp plots take a long time...')
 @click.option('--use_shap', default=False, is_flag=True, help='Useful when testing, since shap plots take a long time...')
-def generate_report(service : str, data_name: str, target_variable: str, model_config_name : str, use_pdp: bool, use_shap : bool):
+def generate_report(service : str, data_name: str, target_variable: str, model_config_name : str, is_classification: bool, use_pdp: bool, use_shap : bool):
 
     path_manager = PathManager(service)
     load_manager = LoadManager(path_manager)
@@ -784,7 +903,7 @@ def generate_report(service : str, data_name: str, target_variable: str, model_c
     print(report_path)
     print(report_resources_path)
     generate_report_util(model, data, features_info, features_model, target_variable, out_of_sample_predictions, model_trials, report_path,
-                         report_resources_path, use_pdp, use_shap)
+                         report_resources_path, is_classification, use_pdp, use_shap)
 
 
 @click.group()

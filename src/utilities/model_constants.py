@@ -100,19 +100,34 @@ SPACE_CLASSIFICATION = {
 }
 
 DEFAULT_REPORT_TABLE_OF_CONTENTS = [
-        "Data Overview",
-        "Error Overview",
-        "Error Quantiles",
-        "Error Percentage Distribution",
-        "Top k Largest Errors",
-        "Learning Curve",
-        "Feature Importance",
-        "Feature Distribution",
-        "Partial Dependence Plots",
-        "Real vs Predicted Quantiles",
-        "Real vs Predicted Quantiles by Feature",
-        "Shapley Summary",
-        "Shapley Waterfall"
-    ]
+    "Data Overview",
+    "Error Overview",
+    "Error Quantiles",
+    "Error Percentage Distribution",
+    "Top k Largest Errors",
+    "Learning Curve",
+    "Feature Importance",
+    "Feature Distribution",
+    "Partial Dependence Plots",
+    "Real vs Predicted Quantiles",
+    "Real vs Predicted Quantiles by Feature",
+    "Shapley Summary",
+    "Shapley Waterfall"
+]
+
+CLASSIFICATION_REPORT_TABLE_OF_CONTENTS = [
+    "Data Overview",
+    "Classification Metrics",
+    "Confusion Matrix",
+    "ROC Curve",
+    "Top k Largest Errors",
+    "Feature Importance",
+    "Feature Distribution",
+    "Learning Curve",
+    "Partial Dependence Plots",
+    "Probability Distribution",
+    "Shapley Summary",
+    "Shapley Waterfall"
+]
 
 FEATURES_TO_SKIP_PDP = ['CarMake', 'CarModel', 'vehicle_maker', 'vehicle_model', 'county', 'date_crawled', 'vehicle_eurotax_code']
