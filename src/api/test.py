@@ -6,6 +6,8 @@ import os
 import sys
 from typing import Dict, Tuple, Optional, List
 
+import pprint
+import numpy as np
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utilities.load_utils import *
@@ -14,17 +16,16 @@ load_dotenv()
 API_KEY = os.getenv("API_KEY", "your_api_key_here")
 
 
-BASE_URL = "https://ml.staging.pl.ominimo.eu"
-#BASE_URL = "http://0.0.0.0:8081"
+#BASE_URL = "https://ml.staging.pl.ominimo.eu"
+BASE_URL = "http://0.0.0.0:8081"
+
 ENDPOINTS = {
-    "competitors": "/predict/competitors",
-    "technical_price": "/predict/technical_price",
-    "optimal_price": "/predict/optimal_price"
+    "competitors": "/predict",
 }
 
 from config import ApiConfig
 
-conf = ApiConfig.load_from_json('mubi_cheapest_offers')
+conf = ApiConfig.load_from_json('mubi_cheapest_offers_v3')
 
 TRAIN_DATA_NAME = conf.train_data_name
 REQUIRED_COLUMNS = [col['name'] for col in conf.feature_columns]
@@ -42,7 +43,8 @@ class APITester:
     def get_test_case(self) -> Tuple[pd.Series, Dict]:
         rnd = random.randint(0, len(self.test_data) - 1)
         test_row = self.test_data.iloc[rnd]
-        test_features = test_row[REQUIRED_COLUMNS].to_dict()
+        test_features = test_row[REQUIRED_COLUMNS].replace({np.nan: None}).to_dict()
+        test_features['contractor_personal_id'] = str(test_row['contractor_personal_id'])
         return test_row, test_features
 
     async def call_endpoint(self, client: httpx.AsyncClient, endpoint: str,
@@ -53,14 +55,10 @@ class APITester:
 
         if response.status_code != 200:
             print(f"Error calling {endpoint}: Status code {response.status_code}")
-            print(response.content)
+            pprint.pprint(response.content)
             return None, response.status_code
 
         return response.json(), response.status_code
-        #
-        # except Exception as e:
-        #     print(f"Error calling {endpoint}: {str(e)}")
-        #     return None, 500
 
     def analyze_competitor_results(self, response_data: Dict, test_row: pd.Series) -> pd.DataFrame:
         df = pd.DataFrame([response_data])
@@ -77,17 +75,7 @@ class APITester:
     def save_results(self, results: Dict[str, List], iteration: int):
         for endpoint, data_list in results.items():
             if data_list:
-
-                if endpoint != 'competitors':
-                    df = pd.DataFrame(data_list)
-                    if endpoint == 'optimal_price':
-                        rank1 = len(df[df['optimal_price'] < df['cheapest_competitor_price']])
-                        total = len(df)
-                        print(f'{rank1}/{total}')
-                else:
-                    df = pd.concat(data_list)
-
-
+                df = pd.concat(data_list)
                 filename = f"{self.results_dir}/{endpoint}_results_iter{iteration}.csv"
                 df.to_csv(filename, index=False)
                 print(f"Saved {endpoint} results to {filename}")
@@ -118,7 +106,7 @@ class APITester:
 
 async def main():
     path_manager = PathManager('mubi')
-    test_data = pd.read_parquet(path_manager.get_raw_data_path('mubi_all_data_new', extension='.parquet'))
+    test_data = pd.read_parquet(path_manager.get_raw_data_path('mubi_all_data_new_new', extension='.parquet'))
     try:
         test_data['policy_start_date'] = test_data['policy_start_date'].dt.strftime('%Y_%m_%d')
     except:
@@ -132,7 +120,7 @@ async def main():
     }
 
     # Run tests
-    n_iterations = 10
+    n_iterations = 1
     start_time = datetime.now()
 
     for i in range(n_iterations):

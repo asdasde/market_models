@@ -1,142 +1,23 @@
 import os
+import pprint
 import sys
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Depends, Security
+from contextlib import asynccontextmanager
+from typing import Tuple, Dict, Any
+
+from fastapi import FastAPI, HTTPException, Depends, Security, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security.api_key import APIKeyHeader
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from contextlib import asynccontextmanager
-
-from utilities.model_utils import *
-from utilities.load_utils import *
-import data.data_processors as data_processors
-from config import ApiConfig
-from fastapi import Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-config = ApiConfig.load_from_json('mubi_cheapest_offers')
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-
-@asynccontextmanager
-async def lifespan(app : FastAPI):
-    init_models()
-    yield
-
-app = FastAPI(
-    lifespan=lifespan,
-    title=f"{config.config_name.title()} Prediction API",
-    description=f"API for {config.config_name} predictions",
-    version="1.0.0"
-)
-
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=config.allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-path_manager = None
-load_manager = None
-
-real_data = None
-models = {}
-data_name_reference = {}
-on_top = None
-
-InputFeatures = config.feature_validator
-
-
-
-def init_models():
-    global real_data, models, on_top, data_name_reference, path_manager, load_manager
-
-    path_manager = PathManager(config.service_name)
-    load_manager = LoadManager(path_manager)
-
-    real_data, _, _, _  = load_manager.load_data(config.train_data_name)
-
-    model_names = {target_variable : path_manager.get_model_name(config.train_data_name, target_variable, model_config)
-                   for target_variable, model_config in config.target_variables_and_model_config.items()}
-
-    models = {
-        target_variable : load_manager.load_model(config.train_data_name, model_name)
-        for target_variable, model_name in model_names.items()
-    }
-
-    on_top = load_manager.load_on_top_file()
-    data_name_reference = LoadManager.load_data_name_reference()
-
-def process_input_data(datas) -> pd.DataFrame:
-    global data_name_reference
-    data_dict = datas.model_dump()
-    data_dict = {
-        key: (value.value if isinstance(value, Enum) else value)
-        for key, value in data_dict.items()
-    }
-    df = pd.DataFrame([data_dict])
-    processor = getattr(data_processors, config.input_processor)
-    processed_data, _, _, fm, _ = processor([df], data_name_reference, "native", path_manager, load_manager)
-    return processed_data
-
-
-
-def prepare_categorical_data(processed_data: pd.DataFrame) -> pd.DataFrame:
-    for col in processed_data.columns:
-        if processed_data[col].dtype == 'category':
-            processed_data[col] = pd.Categorical(
-                processed_data[col],
-                categories=real_data[col].cat.categories
-            )
-    return processed_data
-
-
-def predict_competitors(processed_data: pd.DataFrame) -> Dict:
-    predictions = {}
-    prepared_data = prepare_categorical_data(processed_data.copy())
-    for target_var in config.target_variables_and_model_config.keys():
-        model = models[target_var]
-        data_slice = prepared_data[model.feature_names]
-        if config.debug_mode:
-            print(f"Processing {target_var}")
-        prediction = float(predict_on_top(model, data_slice, on_top, target_var)[0])
-        predictions[target_var] = prediction
-    return predictions
-
-
-def calculate_technical_price(processed_data: pd.DataFrame) -> float:
-    predictions = []
-    for tp_target_variable, cost_estimate, weight in config.tp_kernel:
-        model = models[tp_target_variable]
-        data_slice = processed_data[model.feature_names]
-        predictions.append(predict_on_top(model, data_slice, on_top, tp_target_variable)[0] * cost_estimate * weight)
-
-    return float(np.sum(np.array(predictions)).round(2))
-
-
-def find_cheapest_competitor(predictions: Dict) -> tuple:
-    min_price = float('inf')
-    min_competitor = None
-
-    for target_variable, price in predictions.items():
-        if price < min_price:
-            min_price = price
-            min_competitor = target_variable
-
-    return min_competitor, min_price
-
-
-async def verify_api_key(api_key: str = Security(api_key_header)):
-    if config.api_key and (not api_key or api_key != config.api_key):
-        raise HTTPException(status_code=403, detail="Could not validate API Key")
-    return api_key
-
+import data.data_processors as data_processors
+from utilities.model_utils import *
+from utilities.load_utils import *
+import pricing.pricing_logic as pricing_logic
 
 logging.basicConfig(
     level=logging.INFO,
@@ -148,92 +29,166 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+class PricingManager:
+    def __init__(self, pricing_config: PricingConfig, train_date_name : str, path_manager: "PathManager", load_manager: "LoadManager"):
+        self.pricing_config = pricing_config
+        self.train_data_name = train_date_name
+        self.path_manager = path_manager
+        self.load_manager = load_manager
+        self.models = self.load_manager.load_pricing_config_models(train_date_name, pricing_config)
 
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    body = await request.body()
-    logging.info(body)
-    error_details = []
-    for error in exc.errors():
-        error_details.append({
-            'location': error.get('loc', []),
-            'message': error.get('msg', ''),
-            'type': error.get('type', '')
-        })
+###############################################################################
+# ModelManager
+###############################################################################
+class ModelManager:
+    def __init__(self, config: ApiConfig):
+        self.config = config
+        self.path_manager = PathManager(config.service_name)
+        self.load_manager = LoadManager(self.path_manager)
+        self.data_name_reference = LoadManager.load_data_name_reference()
+        self.train_data, _, _, _ = self.load_manager.load_data(self.config.train_data_name)
+        self.on_top = self.load_manager.load_on_top_file()
 
-    logger.error(f"""
-    Validation Error:
-    URL: {request.url}
-    Method: {request.method}
-    Client IP: {request.client.host}
-    Time: {datetime.now().isoformat()}
-    Details: {json.dumps(error_details, indent=2)}
-    """)
+        self.pricing_managers: Dict[str, PricingManager] = {}
 
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={
-            "detail": error_details,
-            "message": "Input validation error"
+        for name, pricing_config in config.pricing_config.items():
+            self.pricing_managers[name] = PricingManager(pricing_config, self.config.train_data_name,
+                                                         self.path_manager, self.load_manager)
+
+
+def prepare_categorical_data(processed_data: pd.DataFrame, train_data: pd.DataFrame) -> pd.DataFrame:
+    for col in processed_data.columns:
+        if processed_data[col].dtype.name == 'category':
+            try:
+                processed_data[col] = pd.Categorical(
+                    processed_data[col],
+                    categories=train_data[col].cat.categories
+                )
+            except Exception as e:
+                logger.error(f"Error processing categorical column {col}: {e}")
+    return processed_data
+
+
+class API:
+    def __init__(self, config: ApiConfig):
+        self.config = config
+        self.path_manager = PathManager(config.service_name)
+        self.load_manager = LoadManager(self.path_manager)
+        self.model_manager = ModelManager(config)
+        self.app = FastAPI(lifespan=self.lifespan)
+
+        InputFeaturesModel = config.feature_validator
+
+        self.setup_app(InputFeaturesModel)
+
+    @asynccontextmanager
+    async def lifespan(self, app: FastAPI):
+        # You can run startup/shutdown code here if needed.
+        yield
+
+    def setup_app(self, InputFeaturesModel: Any):
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=self.config.allowed_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        self.api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+        # Exception handler for request validation errors:
+        @self.app.exception_handler(RequestValidationError)
+        async def validation_exception_handler(request: Request, exc: RequestValidationError):
+            body = await request.body()
+            logging.info(body)
+            error_details = []
+            for error in exc.errors():
+                error_details.append({
+                    'location': error.get('loc', []),
+                    'message': error.get('msg', ''),
+                    'type': error.get('type', '')
+                })
+            logger.error(f"""
+                Validation Error:
+                    URL: {request.url}
+                    Method: {request.method}
+                    Client IP: {request.client.host}
+                    Time: {datetime.now().isoformat()}
+                    Details: {json.dumps(error_details, indent=2)}
+            """)
+            return JSONResponse(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                content={"detail": error_details, "message": "Input validation error"}
+            )
+
+        @self.app.post("/predict", status_code=200)
+        async def predict_competitors(
+            data: InputFeaturesModel,
+            api_key: str = Depends(self.verify_api_key)
+        ):
+            processed_data = self.process_input_data(data)
+            processed_data_with_competitors = self.predict_competitors(processed_data)
+            calculated_prices = self.calculate_prices(processed_data_with_competitors)
+
+            packages = [pricing_manager.pricing_config.package_name
+                        for pricing_manager in self.model_manager.pricing_managers.values()]
+
+            prices = calculated_prices[packages].round().to_dict(orient='records')[0]
+            pprint.pprint(prices)
+
+            return prices
+
+    async def verify_api_key(self, api_key: str = Security(APIKeyHeader(name="X-API-Key"))):
+        if self.config.api_key and (not api_key or api_key != self.config.api_key):
+            raise HTTPException(status_code=403, detail="Could not validate API Key")
+        return api_key
+
+    def process_input_data(self, data: Any) -> pd.DataFrame:
+        data_dict = data.model_dump() if hasattr(data, "model_dump") else data.dict()
+        data_dict = {
+            key: (value.value if isinstance(value, Enum) else value)
+            for key, value in data_dict.items()
         }
-    )
+        df = pd.DataFrame([data_dict])
+        processor = getattr(data_processors, self.config.input_processor)
+        processed_data, _, _, _, _ = processor(
+            [df],
+            self.model_manager.data_name_reference,
+            "native",
+            self.path_manager,
+            self.load_manager
+        )
+        return prepare_categorical_data(processed_data, self.model_manager.train_data)
 
 
-@app.post("/predict/competitors", response_model=Dict)
-async def predict_post(data : InputFeatures, api_key: str = Depends(verify_api_key)):
-    try:
-        processed_data = process_input_data(data)
-        return predict_competitors(processed_data)
-    except Exception as e:
-        print(e)
+    def predict_competitors(self, data: pd.DataFrame) -> pd.DataFrame:
+        try:
+            for name, pricing_manager in self.model_manager.pricing_managers.items():
+                data = predict_multiple_models(data, pricing_manager.models, self.model_manager.on_top)
+            return data
+        except Exception as e:
+            logger.error(f"Error during prediction: {e}", exc_info=True)
+            if self.config.debug_mode:
+                raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=500, detail="An error occurred during prediction")
+
+    def calculate_prices(self, data : pd.DataFrame) -> pd.DataFrame:
+        calculated_prices = data.copy()
+        for name, pricing_manager in self.model_manager.pricing_managers.items():
+            calculated_prices = pricing_logic.calculate_price(calculated_prices, pricing_manager.pricing_config)
+        return calculated_prices
 
 
-@app.post("/predict/technical_price", response_model=Dict)
-async def predict_tp_post(data : InputFeatures, api_key: str = Depends(verify_api_key)):
-    try:
-        processed_data = process_input_data(data)
-        tp = calculate_technical_price(processed_data)
-        return {'tp': tp}
-    except Exception as e:
-        if config.debug_mode:
-            raise HTTPException(status_code=500, detail=str(e))
-        raise HTTPException(status_code=500, detail="An error occurred during prediction")
 
-
-@app.post("/predict/optimal_price", response_model=Dict)
-async def predict_optimal_price(data : InputFeatures, api_key: str = Depends(verify_api_key)):
-
-    try:
-        processed_data = process_input_data(data)
-
-        competitor_predictions = predict_competitors(processed_data)
-        technical_price = calculate_technical_price(processed_data)
-
-        _, cheapest_price = find_cheapest_competitor(competitor_predictions)
-
-        suggested_price = cheapest_price * config.rank1_undercut_factor
-
-        if technical_price < suggested_price:
-            optimal_price = suggested_price
-        else:
-            optimal_price = technical_price
-
-        return {
-            'optimal_price': round(optimal_price, 2),
-            'technical_price': technical_price,
-            'cheapest_competitor_price': cheapest_price,
-            'suggested_competitive_price': round(suggested_price, 2)
-        }
-    except Exception as e:
-         if config.debug_mode:
-             raise HTTPException(status_code=500, detail=str(e))
-         raise HTTPException(status_code=500, detail="An error occurred during prediction")
-
+def create_app(config_name: str) -> Tuple[FastAPI, ApiConfig]:
+    api_config = ApiConfig.load_from_json(config_name)
+    api = API(api_config)
+    return api.app, api_config
 
 if __name__ == "__main__":
+    app, app_config = create_app("mubi")
     uvicorn.run(
-        "main:app",
-        host=config.api_host,
-        port=config.api_port,
-        reload=config.debug_mode
+        app,
+        host=app_config.api_host,
+        port=app_config.api_port,
     )

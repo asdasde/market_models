@@ -24,7 +24,6 @@ def create_feature_validators(schema: list) -> Type:
         validations = field_info.get("validation", [])
         is_nullable = field_info.get("nullable", False)
 
-        # Mapping JSON type to Python type
         if field_type == "str":
             pydantic_type = str
         elif field_type == "int":
@@ -72,8 +71,21 @@ def create_feature_validators(schema: list) -> Type:
 
     return type("DynamicModel", (BaseModel,), namespace)
 
+class PricingConfig(BaseModel):
+    target_variables_and_model_config: Dict[str, Optional[str]]
+    rank1_undercut_factor: float
+
+    tp_kernel: List[Dict[str, Any]] = None
+    tp_take_top_k : int
+    tp_nan_threshold : int
+    tp_global_adjustment : float
+    tp_adjustment_function : str
+
+    package_name : str
+
 
 class ApiConfig(BaseModel):
+
     api_host: str = Field(default_factory=lambda: os.getenv("API_HOST", "0.0.0.0"))
     api_port: int = Field(default_factory=lambda: int(os.getenv("API_PORT", "8081")))
     debug_mode: bool = Field(default_factory=lambda: os.getenv("DEBUG_MODE", "false").lower() == "true")
@@ -84,15 +96,14 @@ class ApiConfig(BaseModel):
 
     config_name: str
     service_name: str
+
     train_data_name: str
-    target_variables_and_model_config: Dict[str, Optional[str]]
     feature_columns: List[Dict[str, Any]]
-    tp_kernel: List[Dict[str, Any]] = None
-    tp_take_top_k : int 
-    rank1_undercut_factor : float
     input_processor: str
     additional_settings: Dict[str, Any] = Field(default_factory=dict)
     feature_validator: Optional[Type[BaseModel]] = None
+
+    pricing_config: Dict[str, PricingConfig] = None
 
     @classmethod
     def load_from_json(cls, api_config_name) -> "ApiConfig":

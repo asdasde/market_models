@@ -19,6 +19,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utilities.model_utils import ModelConfig
 from utilities.path_utils import *
 from utilities.files_utils import read_data_frame
+from api.config import ApiConfig, PricingConfig
 
 
 def to_interval(x):
@@ -237,6 +238,18 @@ class LoadManager:
             models[model_name] = self.load_model(train_data_name, model_name)
         return models
 
+    def load_pricing_config_models(self, train_data_name : str, config : PricingConfig) -> dict[str, xgboost.Booster]:
+
+        model_names = {
+            target_variable: self.path_manager.get_model_name(train_data_name, target_variable, model_config)
+            for target_variable, model_config in config.target_variables_and_model_config.items()}
+
+        models = {
+            target_variable: self.load_model(train_data_name, model_name)
+            for target_variable, model_name in model_names.items()
+        }
+
+        return models
 
 def reconstruct_categorical_variables(data : pd.DataFrame) -> pd.DataFrame:
     dummy_columns = [col for col in data.columns if col.endswith('__dummy')]
