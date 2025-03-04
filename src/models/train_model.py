@@ -383,16 +383,18 @@ def train_model(service, data_name, target_variable, model_config_name):
 
     make_report.generate_report_util(model, data, features_info, features_model, target_variable,
                                       out_of_sample_predictions, trials, report_path,
-                                     report_resources_path, is_classification=False, use_pdp=True, use_shap=True)
+                                     report_resources_path, is_classification=False, use_pdp=True, use_shap=False)
 
     error_overview_path = path_manager.get_error_overview_path()
     error_overview.update_error_overview(round(percent_mMae, 2), data_name, target_variable, model_config.model_config_name, error_overview_path)
 
 
 
-def get_feature_quartiles(data: pd.DataFrame):
+def get_feature_quartiles(data: pd.DataFrame, target_variable: str):
     data_quartiles = data.copy()
     for column in data.columns:
+        if column == target_variable:
+            continue
         if pd.api.types.is_numeric_dtype(data[column]):
             if data[column].nunique() >= 4:
                 data_quartiles[column] = pd.qcut(data[column], q=[0, 0.25, 0.5, 0.75, 1], labels=False,
@@ -403,16 +405,17 @@ def get_feature_quartiles(data: pd.DataFrame):
 
 def evaluate_baseline_error_model(data: pd.DataFrame, features: list, target_variable: str):
     train_data, test_data = train_test_split(data, test_size=0.2, random_state=42)
-    train_data[features] = get_feature_quartiles(train_data[features])
-    test_data[features] = get_feature_quartiles(test_data[features])
+    train_data_one_r = get_feature_quartiles(train_data[features], target_variable)
+    test_data_one_r = get_feature_quartiles(test_data[features], target_variable)
+
     baseline_error_model = OneRClassifier()
-    baseline_error_model.fit(train_data[features].values, train_data[target_variable].values)
-    baseline_error_model_preds = baseline_error_model.predict(test_data[features].values)
+    baseline_error_model.fit(train_data_one_r[features].values, train_data_one_r[target_variable].values)
+    baseline_error_model_preds = baseline_error_model.predict(test_data_one_r[features].values)
 
     logging.info(
-        f"Basline error models Log loss is {log_loss(test_data[target_variable], baseline_error_model_preds)}.")
+        f"Basline error models Log loss is {log_loss(train_data_one_r[target_variable], baseline_error_model_preds)}.")
     logging.info(
-        f"Basline error models Accuracy score is {accuracy_score(test_data[target_variable], baseline_error_model_preds)}.")
+        f"Basline error models Accuracy score is {accuracy_score(train_data_one_r[target_variable], baseline_error_model_preds)}.")
 
 
 @click.command(name='train_presence_model')
@@ -428,8 +431,6 @@ def train_market_presence_model(service, data_name, target_variable, model_confi
     logging.info(f"Starting presence model training process for {data_name} and {target_variable}...")
 
     presence_model_name = path_manager.get_presence_model_name(data_name, target_variable, model_config_name)
-    print(presence_model_name)
-    print(path_manager.get_model_path(data_name, presence_model_name))
 
     presence_model_target_variable = f'{target_variable}_presence'
 
@@ -469,7 +470,7 @@ def train_market_presence_model(service, data_name, target_variable, model_confi
 
     make_report.generate_report_util(presence_model, data, features_info, features_model, presence_model_target_variable,
                                      presence_model_out_of_sample_predictions, presence_model_trials, report_path,
-                                     report_resources_path, is_classification=True, use_pdp=True, use_shap=True)
+                                     report_resources_path, is_classification=True, use_pdp=True, use_shap=False)
 
 
 
@@ -478,41 +479,52 @@ def train_market_presence_model(service, data_name, target_variable, model_confi
 @click.option('--data_name', required=True, type=click.STRING)
 @click.option('--target_variable', required=True, type=click.STRING)
 @click.option('--use_pretrained_model', required=False, type=click.BOOL, default=True, show_default=True)
-def train_error_model(service, data_name, target_variable, use_pretrained_model):
+@click.option('--pretrained_model_config_name', required=False, type=click.STRING)
+@click.option('--error_model_config_name', required=False, type=click.STRING)
+def train_error_model(service, data_name, target_variable, use_pretrained_model, pretrained_model_config_name = None, error_model_config_name = None):
 
     path_manager = PathManager(service)
     load_manager = LoadManager(path_manager)
     export_manager = ExportManager(path_manager)
 
-    model_name = path_manager.get_model_name(data_name, target_variable)
-    error_model_name = path_manager.get_error_model_name(data_name, target_variable)
+    model_name = path_manager.get_model_name(data_name, target_variable, pretrained_model_config_name)
+    error_model_name = path_manager.get_error_model_name(data_name, target_variable, error_model_config_name)
 
     error_model_target_variable = f'{model_name}_error'
 
     data, features_info, features_on_top, features_model = load_manager.load_data(data_name, target_variable)
 
-    model_exists = load_manager.check_model_existence(data_name, target_variable)
+    model_exists = load_manager.check_model_existence(data_name, model_name)
 
     if (use_pretrained_model and not model_exists) or not use_pretrained_model:
-        train_model(data_name, target_variable)
+        raise Exception(f"Model {model_name} does not exist. Please train the model first.")
 
     predictions = load_manager.load_out_of_sample_predictions(data_name, model_name, target_variable)
 
-    errors = data[target_variable] - predictions
-    errors[np.abs(errors) < 1000] = 0
-    errors[np.abs(errors) > 1000] = 1
-    errors = errors.astype(bool)
+    abs_errors = abs(data[target_variable].values - predictions.values)
+    print(abs_errors)
+    q_75 = np.percentile(abs_errors, 75)
+
+    print(q_75)
+
+    abs_errors[abs_errors <= q_75] = 0
+    abs_errors[abs_errors > q_75] = 1
+    abs_errors = abs_errors.astype(bool)
 
 
-    data[error_model_target_variable] = errors
+    data[error_model_target_variable] = abs_errors
 
     data = data[features_model + [error_model_target_variable]]
 
-    evaluate_baseline_error_model(data, features_model, error_model_target_variable)
+    #evaluate_baseline_error_model(data, features_model, error_model_target_variable)
 
-    error_model, error_model_hyperparameters, error_model_out_of_sample_predictions, error_model_trials, _ = train_model_util(data, features_model, error_model_target_variable, True, None)
+    error_model_config = load_manager.load_model_config(data_name, error_model_config_name)
 
-    export_manager.export_model(error_model, error_model_hyperparameters, error_model_out_of_sample_predictions, error_model_trials, error_model_name)
+    error_model, error_model_hyperparameters, error_model_out_of_sample_predictions, error_model_trials, _ = (
+        train_model_util(data, features_model, error_model_target_variable, True, error_model_config))
+
+    export_manager.export_model(error_model, error_model_hyperparameters, error_model_out_of_sample_predictions,
+                                error_model_trials, data_name, error_model_name)
 
     report_path = path_manager.get_report_path(data_name, error_model_target_variable, None)
     report_resources_path = path_manager.get_report_resource_path(report_path)

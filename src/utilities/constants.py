@@ -64,7 +64,7 @@ DEFAULT_TARGET_VARIABLES = {
                       'GENERALI_price',
                       'GENERTEL_price',
                       'GROUPAMA_price', 'K&AMP;H_price', 'KÖBE_price', 'MAGYAR_price',
-                      'SIGNAL_price', 'UNION_price', 'UNIQA_price', 'GRÁNIT_price'],
+                      'SIGNAL_price', 'UNION_price', 'UNIQA_price', 'GRÁNIT_price', 'OMINIMO_price'],
     'mubi': [
         "BEESAFE-(OC)-price",
         "TUZ-(OC),(NNW),(Assistance=100 km PL)-price",
@@ -113,29 +113,6 @@ column_to_folder_mapping = {
     'WÁBERER_price': 'granit_tables',
     'GRÁNIT_price': 'granit_tables',
 }
-
-PUNKTA_CATEGORICAL_COLUMNS = ['vehicle_maker', 'vehicle_fuel_type', 'voivodeship', 'county', 'owner_driver_same',
-                              'vehicle_parking_place']
-PUNKTA_FEATURES_INFO = ['date_crawled', 'contractor_birth_year', 'driver_licence_year', 'vehicle_make_year']
-PUNKTA_FEATURES_ON_TOP = []
-PUNKTA_FEATURES_MODEL = ['vehicle_power', 'vehicle_engine_size', 'vehicle_weight_min', 'vehicle_weight_max',
-                         'worth', 'vehicle_age', 'number_of_damages_caused_in_last_5_years', 'mileage_domestic',
-                         'contractor_age', 'licence_at_age', 'driver_experience', 'latitude', 'longitude',
-                         'postal_code_population', 'postal_code_area', 'postal_code_population_density',
-                         'vehicle_weight_to_power_ratio', 'MTU24-contractor_age_factor', 'MTU24-vehicle_age_factor',
-                         'time_delta', 'policy_start_month'] + PUNKTA_CATEGORICAL_COLUMNS
-PUNKTA_FEATURES_MODEL = ['vehicle_engine_size',
-                         'worth', 'number_of_damages_caused_in_last_5_years', 'mileage_domestic'
-                            , 'licence_at_age', 'driver_experience', 'latitude', 'longitude',
-                         'postal_code_population', 'postal_code_area', 'postal_code_population_density',
-                         'vehicle_weight_to_power_ratio', 'MTU24-contractor_age_factor', 'MTU24-vehicle_age_factor',
-                         'time_delta', 'policy_start_month'] + PUNKTA_CATEGORICAL_COLUMNS
-
-PUNKTA_FEATURES_MODEL = [
-                            'worth', 'number_of_damages_caused_in_last_5_years', 'mileage_domestic'
-                            , 'licence_at_age', 'latitude', 'longitude',
-                            'postal_code_population', 'postal_code_area', 'postal_code_population_density',
-                            'time_delta', 'policy_start_month'] + PUNKTA_CATEGORICAL_COLUMNS
 
 
 MUBI_CATEGORICAL = ['vehicle_maker', 'vehicle_fuel_type', 'vehicle_parking_place',

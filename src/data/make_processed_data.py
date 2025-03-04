@@ -203,7 +203,8 @@ def merge_processed_datas(service: str, names: str, names_file_name: str):
                 raise ValueError("Inconsistent features_on_top across datasets")
             if sorted(features_model) != sorted(features_model_set):
                 logger.error(f"Features model mismatch for {name}")
-                logger.error(f"{set(features_model).difference(set(features_model))}")
+                logger.error(f"{set(features_model).difference(set(features_model_set))}")
+                logger.error(f"{set(features_model_set).difference(set(features_model))}")
                 raise ValueError("Inconsistent features_model across datasets")
 
         datas.append(data)

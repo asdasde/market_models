@@ -97,6 +97,7 @@ SPACE_CLASSIFICATION = {
     'reg_alpha': hp.uniform('reg_alpha', 40, 180),
     'reg_lambda': hp.uniform('reg_lambda', 0, 1),
     'seed': 0,
+    'monotone_constraints' : {}
 }
 
 DEFAULT_REPORT_TABLE_OF_CONTENTS = [

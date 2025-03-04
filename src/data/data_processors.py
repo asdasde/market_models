@@ -362,12 +362,17 @@ def make_processed_netrisk_casco_like_data(datas : List[pd.DataFrame], data_name
     features_info = NETRISK_CASCO_FEATURES_INFO
     features_on_top = NETRISK_CASCO_FEATURES_ON_TOP
 
-    latest_model_training_data = 'netrisk_casco_v11'
+    latest_model_training_data = 'netrisk_casco_v22'
     features_model = LoadManager.reconstruct_features_model(data_name_reference[latest_model_training_data]['features_model'])
-    print(features_model, target_variables)
     data, features_model, target_variables = remove_special_chars_from_columns(data, features_model, target_variables)
+
     data = data.set_index('unique_id')
+
+    if 'OMINIMO_price' not in data.columns:
+        data['OMINIMO_price'] = None
+
     if all([x in data.columns for x in target_variables]):
+        print(target_variables)
         data = data[features_info + features_on_top + features_model + target_variables]
     else:
         data = data[features_info + features_on_top + features_model]

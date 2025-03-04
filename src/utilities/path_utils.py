@@ -39,8 +39,11 @@ class PathManager:
             return f'{data_name}_{target_variable}_model'
 
     @staticmethod
-    def get_error_model_name(data_name: str, target_variable: str) -> str:
-        return f'{data_name}_{target_variable}_error_model'
+    def get_error_model_name(data_name: str, target_variable: str, model_config = None) -> str:
+        if model_config:
+            return f'{data_name}_{target_variable}_{model_config}_error_model'
+        else:
+            return f'{data_name}_{target_variable}_error_model'
 
     @staticmethod
     def get_presence_model_name(data_name: str, target_variable: str, model_config = None) -> str:
